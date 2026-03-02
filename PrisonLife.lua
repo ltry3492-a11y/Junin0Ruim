@@ -1275,7 +1275,7 @@ local function CreatePortal()
         local part = Instance.new("Part")
         part.Name = "Portal_" .. name
         part.Size = Vector3.new(5, 10, 1) -- Largura 5, altura 10, espessura 1 (em pé)
-        part.CFrame = CFrame.new(position) * CFrame.Angles(0, math.rad(90), 0)
+        part.CFrame = CFrame.new(position)
         part.Anchored = true
         part.CanCollide = false
         part.Transparency = 0.3
