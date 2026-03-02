@@ -1258,70 +1258,102 @@ local PLAYER_PORTAL_COOLDOWN = 2
 local lastPlayerPortalTime = 0
 
 local function CreatePortal()
+
     -- Destroi portais antigos
     for _, part in ipairs(PortalParts) do
         if part and part.Parent then
             part:Destroy()
         end
     end
+
     PortalParts = {}
     PortalCooldown = {}
-    
+
     -- Coordenadas
-    local posPrisao = Vector3.new(997.28, 100.39, 2329.03)  -- Prisão
-    local posBase = Vector3.new(-966.4554, 94.1289, 2080.625) -- Base criminosos
-    
+    local posPrisao = Vector3.new(997.28, 100.39, 2329.03)
+    local posBase = Vector3.new(-966.4554, 94.1289, 2080.625)
+
     local function createPortalPart(position, targetPosition, color, name)
+
         local part = Instance.new("Part")
         part.Name = "Portal_" .. name
-        part.Size = Vector3.new(5, 10, 1) -- Largura 5, altura 10, espessura 1 (em pé)
-        part.CFrame = CFrame.new(position)
+        part.Size = Vector3.new(5, 10, 1) -- largura, altura, espessura
         part.Anchored = true
         part.CanCollide = false
         part.Transparency = 0.3
         part.BrickColor = BrickColor.new(color)
         part.Material = Enum.Material.Neon
         part.Parent = workspace
-        
-        -- Destacar com cor sólida (sem partículas)
+
+        ----------------------------------------------------------------
+        -- ✅ CORREÇÃO: ROTACIONAR E AFASTAR DA PAREDE
+        ----------------------------------------------------------------
+        local rotation = CFrame.Angles(0, math.rad(90), 0)
+        local offset = CFrame.new(0, 0, -0.6)
+
+        part.CFrame = CFrame.new(position) * rotation * offset
+        ----------------------------------------------------------------
+
+        -- Highlight
         local highlight = Instance.new("Highlight")
         highlight.Adornee = part
-        highlight.FillColor = color == "Bright blue" and Color3.fromRGB(0, 100, 255) or Color3.fromRGB(255, 0, 0)
+        highlight.FillColor =
+            color == "Bright blue"
+            and Color3.fromRGB(0,100,255)
+            or Color3.fromRGB(255,0,0)
+
         highlight.FillTransparency = 0.2
         highlight.OutlineTransparency = 1
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         highlight.Parent = part
-        
-        -- Cooldown do portal
+
+        -- Cooldown
         PortalCooldown[part] = 0
-        
+
         -- Toque
         part.Touched:Connect(function(hit)
             if not hit.Parent then return end
+
             local player = Players:GetPlayerFromCharacter(hit.Parent)
             if player == LocalPlayer then
+
                 local now = tick()
-                if now - lastPlayerPortalTime < PLAYER_PORTAL_COOLDOWN then return end
-                if now - (PortalCooldown[part] or 0) < 3 then return end
-                
+
+                if now - lastPlayerPortalTime < PLAYER_PORTAL_COOLDOWN then
+                    return
+                end
+
+                if now - (PortalCooldown[part] or 0) < 3 then
+                    return
+                end
+
                 lastPlayerPortalTime = now
                 PortalCooldown[part] = now
-                
+
                 task.wait(0.5)
+
                 if part and part.Parent then
                     Teleport(targetPosition)
-                    Notify("Portal", "Teleportado para " .. (name == "Prisao" and "Base dos Criminosos" or "Prisão"))
+
+                    Notify(
+                        "Portal",
+                        "Teleportado para " ..
+                        (name == "Prisao"
+                        and "Base dos Criminosos"
+                        or "Prisão")
+                    )
                 end
             end
         end)
-        
+
         return part
     end
-    
+
     local partPrisao = createPortalPart(posPrisao, posBase, "Bright blue", "Prisao")
     local partBase = createPortalPart(posBase, posPrisao, "Bright red", "Base")
+
     PortalParts = {partPrisao, partBase}
-    
+
     Notify("Portal criado", "Use os portais para teleportar (cooldown de 2s).")
 end
 
