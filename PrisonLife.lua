@@ -1251,10 +1251,10 @@ local function TeleportToPrison()
     Teleport(Vector3.new(726.4, 122.0, 2586.0))
 end
 
--- ==================== SISTEMA DE PORTAL CORRIGIDO ====================
+-- ==================== SISTEMA DE PORTAL CORRIGIDO (EM PÉ) ====================
 local PortalParts = {}
-local PortalCooldown = {} -- cooldown individual por portal (part)
-local PLAYER_PORTAL_COOLDOWN = 2 -- segundos que o jogador não pode usar nenhum portal após teleportar
+local PortalCooldown = {}
+local PLAYER_PORTAL_COOLDOWN = 2
 local lastPlayerPortalTime = 0
 
 local function CreatePortal()
@@ -1267,42 +1267,30 @@ local function CreatePortal()
     PortalParts = {}
     PortalCooldown = {}
     
-    -- Coordenadas corretas
-    local posPrisao = Vector3.new(997.28, 100.39, 2329.03)  -- Nova coordenada da prisão
-    local posBase = Vector3.new(-966.4554, 94.1289, 2080.625) -- Base criminosos (mantida)
+    -- Coordenadas
+    local posPrisao = Vector3.new(997.28, 100.39, 2329.03)  -- Prisão
+    local posBase = Vector3.new(-966.4554, 94.1289, 2080.625) -- Base criminosos
     
-    local function createPortalPart(position, targetPosition, name)
+    local function createPortalPart(position, targetPosition, color, name)
         local part = Instance.new("Part")
         part.Name = "Portal_" .. name
-        part.Size = Vector3.new(10, 1, 10) -- Retângulo maior e mais fino
+        part.Size = Vector3.new(5, 10, 1) -- Largura 5, altura 10, espessura 1 (em pé)
         part.Position = position
         part.Anchored = true
         part.CanCollide = false
-        part.Transparency = 0.5
-        part.BrickColor = BrickColor.new("Bright violet")
+        part.Transparency = 0.3
+        part.BrickColor = BrickColor.new(color)
         part.Material = Enum.Material.Neon
         part.Parent = workspace
         
-        -- Efeito visual (Highlight)
+        -- Destacar com cor sólida (sem partículas)
         local highlight = Instance.new("Highlight")
         highlight.Adornee = part
-        highlight.FillColor = Color3.fromRGB(180, 100, 255)
-        highlight.FillTransparency = 0.3
+        highlight.FillColor = color == "Bright blue" and Color3.fromRGB(0, 100, 255) or Color3.fromRGB(255, 0, 0)
+        highlight.FillTransparency = 0.2
         highlight.OutlineTransparency = 1
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         highlight.Parent = part
-        
-        -- Partículas
-        local att = Instance.new("Attachment", part)
-        local emitter = Instance.new("ParticleEmitter", att)
-        emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-        emitter.Rate = 20
-        emitter.Lifetime = NumberRange.new(1)
-        emitter.SpreadAngle = Vector2.new(180, 180)
-        emitter.VelocityInheritance = 0
-        emitter.Transparency = NumberSequence.new(0.5)
-        emitter.Color = ColorSequence.new(Color3.fromRGB(200, 150, 255))
-        emitter.Size = NumberSequence.new(1)
         
         -- Cooldown do portal
         PortalCooldown[part] = 0
@@ -1313,20 +1301,12 @@ local function CreatePortal()
             local player = Players:GetPlayerFromCharacter(hit.Parent)
             if player == LocalPlayer then
                 local now = tick()
-                -- Verifica cooldown global do jogador
-                if now - lastPlayerPortalTime < PLAYER_PORTAL_COOLDOWN then
-                    return
-                end
-                -- Verifica cooldown deste portal
-                if now - (PortalCooldown[part] or 0) < 3 then -- 3 segundos de cooldown por portal
-                    return
-                end
+                if now - lastPlayerPortalTime < PLAYER_PORTAL_COOLDOWN then return end
+                if now - (PortalCooldown[part] or 0) < 3 then return end
                 
-                -- Teleporta
                 lastPlayerPortalTime = now
                 PortalCooldown[part] = now
                 
-                -- Pequeno delay para evitar múltiplos toques
                 task.wait(0.5)
                 if part and part.Parent then
                     Teleport(targetPosition)
@@ -1338,11 +1318,11 @@ local function CreatePortal()
         return part
     end
     
-    local partPrisao = createPortalPart(posPrisao, posBase, "Prisao")
-    local partBase = createPortalPart(posBase, posPrisao, "Base")
+    local partPrisao = createPortalPart(posPrisao, posBase, "Bright blue", "Prisao")
+    local partBase = createPortalPart(posBase, posPrisao, "Bright red", "Base")
     PortalParts = {partPrisao, partBase}
     
-    Notify("Portal criado", "Use as partes roxas para teleportar (cooldown de 2s).")
+    Notify("Portal criado", "Use os portais para teleportar (cooldown de 2s).")
 end
 
 -- ==================== INICIALIZAÇÃO DA UI ====================
