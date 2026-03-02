@@ -227,7 +227,7 @@ local function CleanupExistingUI()
     end
 end
 
--- ==================== CRIAÇÃO DA UI MODERNA ====================
+-- ==================== CRIAÇÃO DA UI MODERNA (CORRIGIDA) ====================
 local function CreateModernUI()
     local sg = Instance.new("ScreenGui")
     sg.Name = "JGSilentAimUI"
@@ -333,11 +333,18 @@ local function CreateModernUI()
     closeBtnCorner.CornerRadius = UDim.new(0, 6)
     closeBtnCorner.Parent = closeBtn
     
-    local tabContainer = Instance.new("Frame")
+    -- Abas agora são ScrollingFrame horizontal
+    local tabContainer = Instance.new("ScrollingFrame")
     tabContainer.Name = "TabContainer"
     tabContainer.Size = UDim2.new(1, -20, 0, 40)
     tabContainer.Position = UDim2.new(0, 10, 0, 55)
     tabContainer.BackgroundTransparency = 1
+    tabContainer.BorderSizePixel = 0
+    tabContainer.ScrollBarThickness = 4
+    tabContainer.ScrollBarImageColor3 = Color3.fromRGB(120, 120, 255)
+    tabContainer.CanvasSize = UDim2.new(0, 0, 1, 0) -- Será ajustado automaticamente
+    tabContainer.AutomaticCanvasSize = Enum.AutomaticSize.X
+    tabContainer.ScrollingDirection = Enum.ScrollingDirection.X
     tabContainer.Parent = mainFrame
     
     local tabLayout = Instance.new("UIListLayout")
@@ -346,6 +353,11 @@ local function CreateModernUI()
     tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
     tabLayout.Padding = UDim.new(0, 8)
     tabLayout.Parent = tabContainer
+    
+    local tabPadding = Instance.new("UIPadding")
+    tabPadding.PaddingLeft = UDim.new(0, 5)
+    tabPadding.PaddingTop = UDim.new(0, 5)
+    tabPadding.Parent = tabContainer
     
     local contentContainer = Instance.new("Frame")
     contentContainer.Name = "ContentContainer"
@@ -1239,22 +1251,30 @@ local function TeleportToPrison()
     Teleport(Vector3.new(726.4, 122.0, 2586.0))
 end
 
--- ==================== SISTEMA DE PORTAL ====================
+-- ==================== SISTEMA DE PORTAL CORRIGIDO ====================
 local PortalParts = {}
+local PortalCooldown = {} -- cooldown individual por portal (part)
+local PLAYER_PORTAL_COOLDOWN = 2 -- segundos que o jogador não pode usar nenhum portal após teleportar
+local lastPlayerPortalTime = 0
+
 local function CreatePortal()
+    -- Destroi portais antigos
     for _, part in ipairs(PortalParts) do
         if part and part.Parent then
             part:Destroy()
         end
     end
     PortalParts = {}
+    PortalCooldown = {}
     
-    local pos1 = Vector3.new(847.6981, 100.7953, 2229.6553) -- Prisão (M4A1)
-    local pos2 = Vector3.new(-966.4554, 94.1289, 2080.625) -- Base criminosos
+    -- Coordenadas corretas
+    local posPrisao = Vector3.new(997.28, 100.39, 2329.03)  -- Nova coordenada da prisão
+    local posBase = Vector3.new(-966.4554, 94.1289, 2080.625) -- Base criminosos (mantida)
     
-    local function createPortalPart(position, targetPosition)
+    local function createPortalPart(position, targetPosition, name)
         local part = Instance.new("Part")
-        part.Size = Vector3.new(5, 1, 5)
+        part.Name = "Portal_" .. name
+        part.Size = Vector3.new(10, 1, 10) -- Retângulo maior e mais fino
         part.Position = position
         part.Anchored = true
         part.CanCollide = false
@@ -1263,6 +1283,7 @@ local function CreatePortal()
         part.Material = Enum.Material.Neon
         part.Parent = workspace
         
+        -- Efeito visual (Highlight)
         local highlight = Instance.new("Highlight")
         highlight.Adornee = part
         highlight.FillColor = Color3.fromRGB(180, 100, 255)
@@ -1271,6 +1292,7 @@ local function CreatePortal()
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         highlight.Parent = part
         
+        -- Partículas
         local att = Instance.new("Attachment", part)
         local emitter = Instance.new("ParticleEmitter", att)
         emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
@@ -1282,14 +1304,33 @@ local function CreatePortal()
         emitter.Color = ColorSequence.new(Color3.fromRGB(200, 150, 255))
         emitter.Size = NumberSequence.new(1)
         
+        -- Cooldown do portal
+        PortalCooldown[part] = 0
+        
+        -- Toque
         part.Touched:Connect(function(hit)
             if not hit.Parent then return end
             local player = Players:GetPlayerFromCharacter(hit.Parent)
             if player == LocalPlayer then
+                local now = tick()
+                -- Verifica cooldown global do jogador
+                if now - lastPlayerPortalTime < PLAYER_PORTAL_COOLDOWN then
+                    return
+                end
+                -- Verifica cooldown deste portal
+                if now - (PortalCooldown[part] or 0) < 3 then -- 3 segundos de cooldown por portal
+                    return
+                end
+                
+                -- Teleporta
+                lastPlayerPortalTime = now
+                PortalCooldown[part] = now
+                
+                -- Pequeno delay para evitar múltiplos toques
                 task.wait(0.5)
                 if part and part.Parent then
                     Teleport(targetPosition)
-                    Notify("Portal", "Teleportado!")
+                    Notify("Portal", "Teleportado para " .. (name == "Prisao" and "Base dos Criminosos" or "Prisão"))
                 end
             end
         end)
@@ -1297,10 +1338,11 @@ local function CreatePortal()
         return part
     end
     
-    local part1 = createPortalPart(pos1, pos2)
-    local part2 = createPortalPart(pos2, pos1)
-    PortalParts = {part1, part2}
-    Notify("Portal criado", "Use as partes roxas para teleportar.")
+    local partPrisao = createPortalPart(posPrisao, posBase, "Prisao")
+    local partBase = createPortalPart(posBase, posPrisao, "Base")
+    PortalParts = {partPrisao, partBase}
+    
+    Notify("Portal criado", "Use as partes roxas para teleportar (cooldown de 2s).")
 end
 
 -- ==================== INICIALIZAÇÃO DA UI ====================
