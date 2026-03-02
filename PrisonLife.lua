@@ -1361,7 +1361,7 @@ local function CreatePortal()
             posPrisao,
             "Bright red",
             "Base",
-            -90 -- rotação da base criminosa
+            180 -- rotação da base criminosa
         )
 
     PortalParts = {partPrisao, partBase}
