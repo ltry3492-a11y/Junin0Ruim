@@ -1251,7 +1251,7 @@ local function TeleportToPrison()
     Teleport(Vector3.new(726.4, 122.0, 2586.0))
 end
 
--- ==================== SISTEMA DE PORTAL CORRIGIDO (EM PÉ) ====================
+-- ==================== SISTEMA DE PORTAL CORRIGIDO ====================
 local PortalParts = {}
 local PortalCooldown = {}
 local PLAYER_PORTAL_COOLDOWN = 2
@@ -1259,7 +1259,7 @@ local lastPlayerPortalTime = 0
 
 local function CreatePortal()
 
-    -- Destroi portais antigos
+    -- Remove antigos
     for _, part in ipairs(PortalParts) do
         if part and part.Parent then
             part:Destroy()
@@ -1269,15 +1269,18 @@ local function CreatePortal()
     PortalParts = {}
     PortalCooldown = {}
 
-    -- Coordenadas
+    -- POSIÇÕES
     local posPrisao = Vector3.new(997.28, 100.39, 2329.03)
     local posBase = Vector3.new(-966.4554, 94.1289, 2080.625)
 
-    local function createPortalPart(position, targetPosition, color, name)
+    --------------------------------------------------------------------
+    -- FUNÇÃO PORTAL
+    --------------------------------------------------------------------
+    local function createPortalPart(position, targetPosition, color, name, rotationY)
 
         local part = Instance.new("Part")
         part.Name = "Portal_" .. name
-        part.Size = Vector3.new(5, 10, 1) -- largura, altura, espessura
+        part.Size = Vector3.new(5,10,1)
         part.Anchored = true
         part.CanCollide = false
         part.Transparency = 0.3
@@ -1285,14 +1288,11 @@ local function CreatePortal()
         part.Material = Enum.Material.Neon
         part.Parent = workspace
 
-        ----------------------------------------------------------------
-        -- ✅ CORREÇÃO: ROTACIONAR E AFASTAR DA PAREDE
-        ----------------------------------------------------------------
-        local rotation = CFrame.Angles(0, math.rad(90), 0)
-        local offset = CFrame.new(0, 0, -0.6)
+        -- ✅ Rotação individual
+        local rotation = CFrame.Angles(0, math.rad(rotationY), 0)
+        local offset = CFrame.new(0,0,-0.6)
 
         part.CFrame = CFrame.new(position) * rotation * offset
-        ----------------------------------------------------------------
 
         -- Highlight
         local highlight = Instance.new("Highlight")
@@ -1307,10 +1307,8 @@ local function CreatePortal()
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
         highlight.Parent = part
 
-        -- Cooldown
         PortalCooldown[part] = 0
 
-        -- Toque
         part.Touched:Connect(function(hit)
             if not hit.Parent then return end
 
@@ -1319,13 +1317,8 @@ local function CreatePortal()
 
                 local now = tick()
 
-                if now - lastPlayerPortalTime < PLAYER_PORTAL_COOLDOWN then
-                    return
-                end
-
-                if now - (PortalCooldown[part] or 0) < 3 then
-                    return
-                end
+                if now - lastPlayerPortalTime < PLAYER_PORTAL_COOLDOWN then return end
+                if now - (PortalCooldown[part] or 0) < 3 then return end
 
                 lastPlayerPortalTime = now
                 PortalCooldown[part] = now
@@ -1349,12 +1342,31 @@ local function CreatePortal()
         return part
     end
 
-    local partPrisao = createPortalPart(posPrisao, posBase, "Bright blue", "Prisao")
-    local partBase = createPortalPart(posBase, posPrisao, "Bright red", "Base")
+    --------------------------------------------------------------------
+    -- ✅ CADA PORTAL COM SUA DIREÇÃO
+    --------------------------------------------------------------------
+
+    local partPrisao =
+        createPortalPart(
+            posPrisao,
+            posBase,
+            "Bright blue",
+            "Prisao",
+            90 -- rotação da prisão
+        )
+
+    local partBase =
+        createPortalPart(
+            posBase,
+            posPrisao,
+            "Bright red",
+            "Base",
+            -90 -- rotação da base criminosa
+        )
 
     PortalParts = {partPrisao, partBase}
 
-    Notify("Portal criado", "Use os portais para teleportar (cooldown de 2s).")
+    Notify("Portal criado", "Use os portais para teleportar.")
 end
 
 -- ==================== INICIALIZAÇÃO DA UI ====================
