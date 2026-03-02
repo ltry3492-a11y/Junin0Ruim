@@ -31,8 +31,6 @@ local Settings = {
     ESPFillerTransparency = 0.75,
     ESPOutlineColor = Color3.fromRGB(255, 255, 255),
     ESPDepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
-    ESPShowNames = true,
-    ESPShowInventory = true,
     RapidFireEnabled = false,
     FastReloadEnabled = false,
     NoClipEnabled = false,
@@ -71,7 +69,7 @@ local function Notify(title, text)
     end)
 end
 
--- ==================== FUNÇÕES DE SERIALIZAÇÃO (mantidas) ====================
+-- ==================== FUNÇÕES DE SERIALIZAÇÃO ====================
 local function SerializeSettings()
     local serializableSettings = {}
     for k, v in pairs(Settings) do
@@ -135,7 +133,7 @@ local function LoadSettings()
     Notify("Configurações Carregadas", "As configurações foram carregadas com sucesso.")
 end
 
--- ==================== ANTI-TASER (mantido) ====================
+-- ==================== ANTI-TASER ====================
 local GunRemotes = ReplicatedStorage:WaitForChild("GunRemotes", 10)
 local ShootEvent = GunRemotes and GunRemotes:WaitForChild("ShootEvent", 10)
 if not ShootEvent then return end
@@ -174,7 +172,6 @@ local TARGET_UPDATE_INTERVAL = 0.05
 
 local ESPHighlights = {}
 local ESPConnections = {}
-local ESPNameTags = {}
 
 local OriginalFireRate = {}
 local OriginalReloadTime = {}
@@ -840,109 +837,24 @@ local function SwitchTab(tabName)
     end
 end
 
--- ==================== FUNÇÕES DE ESP MELHORADAS ====================
-local function GetPlayerInventory(plr)
-    local items = {}
-    if plr.Character then
-        for _, tool in ipairs(plr.Character:GetChildren()) do
-            if tool:IsA("Tool") then
-                table.insert(items, tool.Name)
-            end
-        end
-    end
-    local plrBackpack = plr:FindFirstChild("Backpack")
-    if plrBackpack then
-        for _, tool in ipairs(plrBackpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                table.insert(items, tool.Name)
-            end
-        end
-    end
-    return items
-end
-
-local function CreateNameTag(plr, char)
-    if not Settings.ESPEnabled or not Settings.ESPShowNames then return end
-    if ESPNameTags[plr] then
-        if type(ESPNameTags[plr]) == "table" and ESPNameTags[plr].billboard then
-            ESPNameTags[plr].billboard:Destroy()
-            if ESPNameTags[plr].conn then ESPNameTags[plr].conn:Disconnect() end
-        elseif ESPNameTags[plr]:IsA("BillboardGui") then
-            ESPNameTags[plr]:Destroy()
-        end
-        ESPNameTags[plr] = nil
-    end
-    
-    local head = char:FindFirstChild("Head")
-    if not head then return end
-    
-    local billboard = Instance.new("BillboardGui")
-    billboard.Name = "JGSilentAim_NameTag"
-    billboard.Size = UDim2.new(0, 200, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
-    billboard.AlwaysOnTop = true
-    billboard.Adornee = head
-    billboard.Parent = char
-    
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, 0, 0, 25)
-    nameLabel.Position = UDim2.new(0, 0, 0, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = plr.Name
-    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    nameLabel.TextSize = 16
-    nameLabel.Font = Enum.Font.GothamBold
-    nameLabel.TextStrokeTransparency = 0.3
-    nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-    nameLabel.Parent = billboard
-    
-    if Settings.ESPShowInventory then
-        local invLabel = Instance.new("TextLabel")
-        invLabel.Size = UDim2.new(1, 0, 0, 20)
-        invLabel.Position = UDim2.new(0, 0, 0, 25)
-        invLabel.BackgroundTransparency = 1
-        local items = GetPlayerInventory(plr)
-        invLabel.Text = #items > 0 and table.concat(items, ", ") or "Sem armas"
-        invLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-        invLabel.TextSize = 12
-        invLabel.Font = Enum.Font.Gotham
-        invLabel.TextStrokeTransparency = 0.5
-        invLabel.TextWrapped = true
-        invLabel.Parent = billboard
-        
-        local conn
-        conn = RunService.Heartbeat:Connect(function()
-            if not billboard or not billboard.Parent then
-                if conn then conn:Disconnect() end
-                return
-            end
-            local newItems = GetPlayerInventory(plr)
-            invLabel.Text = #newItems > 0 and table.concat(newItems, ", ") or "Sem armas"
-        end)
-        ESPNameTags[plr] = {billboard = billboard, conn = conn}
-    else
-        ESPNameTags[plr] = billboard
-    end
-end
-
+-- ==================== FUNÇÕES DE ESP (ORIGINAL) ====================
 local function ClearESPForPlayer(plr)
     local data = ESPHighlights[plr]
-    if data then
-        if data.highlight then data.highlight:Destroy() end
+    if not data then return end
+
+    if data.highlight and data.highlight.Destroy then
+        data.highlight:Destroy()
+    end
+
+    if data.conns then
         for _, conn in ipairs(data.conns) do
-            if conn and conn.Connected then conn:Disconnect() end
+            if conn and conn.Connected then
+                conn:Disconnect()
+            end
         end
-        ESPHighlights[plr] = nil
     end
-    if ESPNameTags[plr] then
-        if type(ESPNameTags[plr]) == "table" and ESPNameTags[plr].billboard then
-            ESPNameTags[plr].billboard:Destroy()
-            if ESPNameTags[plr].conn then ESPNameTags[plr].conn:Disconnect() end
-        elseif ESPNameTags[plr]:IsA("BillboardGui") then
-            ESPNameTags[plr]:Destroy()
-        end
-        ESPNameTags[plr] = nil
-    end
+
+    ESPHighlights[plr] = nil
 end
 
 local function ApplyESPToPlayer(plr)
@@ -965,17 +877,15 @@ local function ApplyESPToPlayer(plr)
         hl.Name = "JGSilentAim_ESP_Highlight"
         hl.Adornee = char
         local teamColor = plr.Team and plr.Team.TeamColor.Color or Color3.fromRGB(255, 255, 255)
+        
         hl.FillColor = teamColor
         hl.FillTransparency = Settings.ESPFillerTransparency
         hl.OutlineColor = Settings.ESPOutlineColor
         hl.OutlineTransparency = 0
         hl.DepthMode = Settings.ESPDepthMode
         hl.Parent = char
+
         data.highlight = hl
-        
-        if Settings.ESPShowNames then
-            CreateNameTag(plr, char)
-        end
     end
 
     if plr.Character then
@@ -1045,6 +955,7 @@ local function UpdateESPHighlightProperties()
     for plr, data in pairs(ESPHighlights) do
         if data.highlight then
             local teamColor = plr.Team and plr.Team.TeamColor.Color or Color3.fromRGB(255, 255, 255)
+            
             data.highlight.FillColor = teamColor
             data.highlight.FillTransparency = Settings.ESPFillerTransparency
             data.highlight.OutlineColor = Settings.ESPOutlineColor
@@ -1053,7 +964,7 @@ local function UpdateESPHighlightProperties()
     end
 end
 
--- ==================== FUNÇÕES DE RAPID FIRE E FAST RELOAD (mantidas) ====================
+-- ==================== FUNÇÕES DE RAPID FIRE E FAST RELOAD ====================
 local function ensureRapidFireWatcher(tool)
     if RapidFireWatchers[tool] then return end
     RapidFireWatchers[tool] = tool:GetAttributeChangedSignal("FireRate"):Connect(function()
@@ -1444,20 +1355,6 @@ local function InitializeUI()
     CreateToggle(espContent, "ESP Enabled", Settings.ESPEnabled, function(v)
         if v then EnableESP() else DisableESP() end
     end)
-    CreateToggle(espContent, "Show Names", Settings.ESPShowNames, function(v)
-        Settings.ESPShowNames = v
-        if Settings.ESPEnabled then
-            DisableESP()
-            EnableESP()
-        end
-    end)
-    CreateToggle(espContent, "Show Inventory", Settings.ESPShowInventory, function(v)
-        Settings.ESPShowInventory = v
-        if Settings.ESPEnabled then
-            DisableESP()
-            EnableESP()
-        end
-    end)
     CreateSlider(espContent, "Fill Transparency", 0, 100, Settings.ESPFillerTransparency * 100, function(v)
         Settings.ESPFillerTransparency = v / 100
         UpdateESPHighlightProperties()
@@ -1551,7 +1448,7 @@ local function CreateVisuals()
     Visuals.Line = lineFrame
 end
 
--- ==================== FUNÇÕES DE TRAÇADORES (mantidas) ====================
+-- ==================== FUNÇÕES DE TRAÇADORES ====================
 local TracerPool = {
     bullets = {},
     tasers = {},
