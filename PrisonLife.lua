@@ -55,6 +55,10 @@ local function ToggleUI()
     if IsMobile and UIComponents.ScreenGui and UIComponents.ScreenGui:FindFirstChild("ToggleUIButton") then
         UIComponents.ScreenGui.ToggleUIButton.Visible = not UISettings.Visible
     end
+    -- Garantir que o botão de toggle esteja visível se a UI principal estiver oculta no mobile
+    if IsMobile and not UISettings.Visible and UIComponents.ScreenGui and UIComponents.ScreenGui:FindFirstChild("ToggleUIButton") then
+        UIComponents.ScreenGui.ToggleUIButton.Visible = true
+    end
 end
 
 -- Coordenadas das armas
@@ -244,14 +248,29 @@ local function CreateModernUI()
     if IsMobile then
         local toggleButton = Instance.new("TextButton")
         toggleButton.Name = "ToggleUIButton"
-        toggleButton.Size = UDim2.new(0, 100, 0, 40)
-        toggleButton.Position = UDim2.new(0.5, -50, 0, 20)
-        toggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+        toggleButton.Size = UDim2.new(0, 80, 0, 30)
+        toggleButton.Position = UDim2.new(1, -110, 0, 10)
+        toggleButton.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
         toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
         toggleButton.Text = "Toggle UI"
         toggleButton.Font = Enum.Font.Gotham
-        toggleButton.TextSize = 14
+        toggleButton.TextSize = 12
         toggleButton.Parent = UIComponents.ScreenGui
+        toggleButton.ZIndex = 100
+
+        local gradient = Instance.new("UIGradient")
+        gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 25, 40)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 25))
+        })
+        gradient.Rotation = 90
+        gradient.Parent = toggleButton
+
+        local stroke = Instance.new("UIStroke")
+        stroke.Color = Color3.fromRGB(120, 120, 255)
+        stroke.Thickness = 1
+        stroke.Transparency = 0.3
+        stroke.Parent = toggleButton
 
         local btnCorner = Instance.new("UICorner")
         btnCorner.CornerRadius = UDim.new(0, 8)
