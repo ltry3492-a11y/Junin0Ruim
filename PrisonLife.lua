@@ -39,11 +39,23 @@ local Settings = {
     AntiTaserEnabled = false,
 }
 
+local IsMobile = UserInputService.TouchEnabled or UserInputService.GamepadEnabled
+
 local UISettings = {
     Visible = true,
     ToggleUIKey = Enum.KeyCode.Insert,
     CurrentTab = "Main"
 }
+
+local function ToggleUI()
+    UISettings.Visible = not UISettings.Visible
+    if UIComponents.MainFrame then
+        UIComponents.MainFrame.Visible = UISettings.Visible
+    end
+    if IsMobile and UIComponents.ScreenGui and UIComponents.ScreenGui:FindFirstChild("ToggleUIButton") then
+        UIComponents.ScreenGui.ToggleUIButton.Visible = not UISettings.Visible
+    end
+end
 
 -- Coordenadas das armas
 local WeaponCoordinates = {
@@ -229,6 +241,25 @@ end
 
 -- ==================== CRIAÇÃO DA UI MODERNA (CORRIGIDA) ====================
 local function CreateModernUI()
+    if IsMobile then
+        local toggleButton = Instance.new("TextButton")
+        toggleButton.Name = "ToggleUIButton"
+        toggleButton.Size = UDim2.new(0, 100, 0, 40)
+        toggleButton.Position = UDim2.new(0.5, -50, 0, 20)
+        toggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 55)
+        toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        toggleButton.Text = "Toggle UI"
+        toggleButton.Font = Enum.Font.Gotham
+        toggleButton.TextSize = 14
+        toggleButton.Parent = UIComponents.ScreenGui
+
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 8)
+        btnCorner.Parent = toggleButton
+
+        toggleButton.MouseButton1Click:Connect(ToggleUI)
+    end
+
     local sg = Instance.new("ScreenGui")
     sg.Name = "JGSilentAimUI"
     sg.ResetOnSpawn = false
@@ -243,16 +274,28 @@ local function CreateModernUI()
     end
     
     UIComponents.ScreenGui = sg
+    if IsMobile then
+        UISettings.Visible = false -- Esconder a UI principal no mobile inicialmente
+    end
+
+
     
     local mainFrame = Instance.new("Frame")
     mainFrame.Name = "MainFrame"
-    mainFrame.Size = UDim2.new(0, 520, 0, 420)
-    mainFrame.Position = UDim2.new(0.5, -260, 0.5, -210)
+    if IsMobile then
+        mainFrame.Size = UDim2.new(0.8, 0, 0.7, 0)
+        mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+        mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    else
+        mainFrame.Size = UDim2.new(0, 520, 0, 420)
+        mainFrame.Position = UDim2.new(0.5, -260, 0.5, -210)
+    end
     mainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
     mainFrame.BorderSizePixel = 0
     mainFrame.Active = true
-    mainFrame.Draggable = false
+    mainFrame.Draggable = not IsMobile
     mainFrame.Parent = sg
+    mainFrame.Visible = UISettings.Visible
     UIComponents.MainFrame = mainFrame
     
     local gradient = Instance.new("UIGradient")
@@ -1908,13 +1951,18 @@ local function HandleAction(actionName, inputState, inputObject)
 end
 
 pcall(function()
-    ContextActionService:BindActionAtPriority("SilentAimShoot", HandleAction, false, 3000, Enum.UserInputType.MouseButton1)
-end)
+	    ContextActionService:BindActionAtPriority("SilentAimShoot", HandleAction, false, 3000, Enum.UserInputType.MouseButton1)
+	end)
+
+if IsMobile then
+    -- Esconder a UI inicialmente no mobile, o botão vai mostrar
+    UISettings.Visible = false
+end
 
 -- ==================== INPUT DE TECLADO ====================
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
-    if input.KeyCode == UISettings.ToggleUIKey then
+    if not IsMobile and input.KeyCode == UISettings.ToggleUIKey then
         ToggleUI()
     end
     
@@ -1932,7 +1980,11 @@ RunService.RenderStepped:Connect(function()
         Visuals.Circle.Visible = Settings.ShowFOV and Settings.Enabled
         if Visuals.Circle.Visible then
             Visuals.Circle.Size = UDim2.new(0, Settings.FOV * 2, 0, Settings.FOV * 2)
-            Visuals.Circle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
+            if IsMobile then
+                Visuals.Circle.Position = UDim2.new(0.5, 0, 0.5, 0)
+            else
+                Visuals.Circle.Position = UDim2.new(0, mousePos.X, 0, mousePos.Y)
+            end
         end
     end
 
@@ -2011,4 +2063,8 @@ CreateVisuals()
 LoadSettings()
 InitializeUI()
 
-Notify("JG SilentAim v2.0", "Carregado! Pressione " .. GetKeyName(UISettings.ToggleUIKey) .. " para abrir/fechar a UI.")
+if IsMobile then
+    Notify("JG SilentAim v2.0", "Carregado! Use o botão 'Toggle UI' para abrir/fechar a UI.")
+else
+    Notify("JG SilentAim v2.0", "Carregado! Pressione " .. GetKeyName(UISettings.ToggleUIKey) .. " para abrir/fechar a UI.")
+end
