@@ -1960,7 +1960,12 @@ local function HandleAction(actionName, inputState, inputObject)
 end
 
 pcall(function()
-    ContextActionService:BindActionAtPriority("SilentAimShoot", HandleAction, false, 3000, Enum.UserInputType.MouseButton1)
+    -- No mobile, também capturamos toques
+    if IsMobile then
+        ContextActionService:BindActionAtPriority("SilentAimShoot", HandleAction, false, 3000, Enum.UserInputType.Touch)
+    else
+        ContextActionService:BindActionAtPriority("SilentAimShoot", HandleAction, false, 3000, Enum.UserInputType.MouseButton1)
+    end
 end)
 
 if IsMobile then
