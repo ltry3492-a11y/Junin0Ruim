@@ -127,9 +127,8 @@ local function SaveSettings()
 end
 
 local function LoadSettings()
-    local jsonString = pcall(getclipboard)
-    if not jsonString or type(jsonString) ~= "string" or #jsonString < 10 then
-        Notify("Erro ao Carregar", "Nenhuma configuração válida encontrada na área de transferência.")
+    local success, jsonString = pcall(getclipboard)
+    if not success or type(jsonString) ~= "string" or #jsonString < 10 then
         return
     end
 
@@ -245,7 +244,14 @@ end
 
 -- ==================== CRIAÇÃO DA UI MODERNA (CORRIGIDA) ====================
 local function CreateModernUI()
+    local sg = Instance.new("ScreenGui")
+
+    
+    UIComponents.ScreenGui = sg -- Atribuir sg a UIComponents.ScreenGui antes de parentar o botão
+
     if IsMobile then
+        UISettings.Visible = false -- Esconder a UI principal no mobile inicialmente
+
         local toggleButton = Instance.new("TextButton")
         toggleButton.Name = "ToggleUIButton"
         toggleButton.Size = UDim2.new(0, 80, 0, 30)
@@ -255,8 +261,9 @@ local function CreateModernUI()
         toggleButton.Text = "Toggle UI"
         toggleButton.Font = Enum.Font.Gotham
         toggleButton.TextSize = 12
-        toggleButton.Parent = UIComponents.ScreenGui
+        toggleButton.Parent = sg
         toggleButton.ZIndex = 100
+        toggleButton.Visible = true -- O botão de toggle deve estar visível inicialmente no mobile
 
         local gradient = Instance.new("UIGradient")
         gradient.Color = ColorSequence.new({
@@ -279,11 +286,13 @@ local function CreateModernUI()
         toggleButton.MouseButton1Click:Connect(ToggleUI)
     end
 
-    local sg = Instance.new("ScreenGui")
-    sg.Name = "JGSilentAimUI"
-    sg.ResetOnSpawn = false
-    sg.IgnoreGuiInset = true
-    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    pcall(function()
+        sg.Parent = CoreGui
+    end)
+    if not sg.Parent then
+        sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+
     
     pcall(function()
         sg.Parent = CoreGui
@@ -295,6 +304,10 @@ local function CreateModernUI()
     UIComponents.ScreenGui = sg
     if IsMobile then
         UISettings.Visible = false -- Esconder a UI principal no mobile inicialmente
+        -- O botão de toggle deve estar visível inicialmente no mobile se a UI principal estiver oculta
+        if UIComponents.ScreenGui and UIComponents.ScreenGui:FindFirstChild("ToggleUIButton") then
+            UIComponents.ScreenGui.ToggleUIButton.Visible = true
+        end
     end
 
 
