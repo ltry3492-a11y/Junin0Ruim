@@ -1131,11 +1131,12 @@ end
 
 -- ==================== NOCLIP CORRIGIDO ====================
 local NoClipConnection = nil
-local NoClipOriginalCollision = {}  -- guarda estado original (opcional)
 
 local function SetNoClip(enabled)
     local character = LocalPlayer.Character
     if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
 
     if enabled then
         -- Se já estava ativo, desconecta para evitar duplicação
@@ -1143,23 +1144,10 @@ local function SetNoClip(enabled)
             NoClipConnection:Disconnect()
         end
 
-        -- Armazena estado original e desativa colisão de todas as partes
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                NoClipOriginalCollision[part] = part.CanCollide
-                part.CanCollide = false
-            end
-        end
+        -- Muda para estado Flying para não cair
+        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
 
-        -- Configura o Humanoid para não cair nem se mover
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.PlatformStand = true
-            humanoid.WalkSpeed = 0
-            humanoid.JumpPower = 0
-        end
-
-        -- Loop de manutenção: força CanCollide = false (alguns scripts podem reativar)
+        -- Loop de manutenção: força CanCollide = false e mantém Flying
         NoClipConnection = RunService.Stepped:Connect(function()
             if not Settings.NoClipEnabled or not LocalPlayer.Character then
                 if NoClipConnection and NoClipConnection.Connected then
@@ -1167,45 +1155,33 @@ local function SetNoClip(enabled)
                 end
                 return
             end
-            local currentChar = LocalPlayer.Character
-            for _, part in ipairs(currentChar:GetDescendants()) do
-                if part:IsA("BasePart") and part.CanCollide then
+            local char = LocalPlayer.Character
+            -- Desativa colisão de todas as partes
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
                     part.CanCollide = false
                 end
+            end
+            -- Garante que continue voando (alguns scripts podem reverter)
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum and hum:GetState() ~= Enum.HumanoidStateType.Flying then
+                hum:ChangeState(Enum.HumanoidStateType.Flying)
             end
         end)
 
         Notify("NoClip", "Ativado – você atravessa paredes.")
     else
-        -- Restaura colisão original (opcional, mas evita problemas)
-        for part, original in pairs(NoClipOriginalCollision) do
-            if part and part.Parent then
-                part.CanCollide = original
-            end
-        end
-        table.clear(NoClipOriginalCollision)
-
-        -- Restaura o Humanoid
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-        if humanoid then
-            humanoid.PlatformStand = false
-            humanoid.WalkSpeed = 16
-            humanoid.JumpPower = 50
-        end
-
         if NoClipConnection and NoClipConnection.Connected then
             NoClipConnection:Disconnect()
         end
-
+        -- Restaura estado normal
+        humanoid:ChangeState(Enum.HumanoidStateType.Running)
         Notify("NoClip", "Desativado.")
     end
 end
-
 -- ==================== INVISIBILIDADE CORRIGIDA ====================
 local InvisibilityData = {
-    realCharCFrame = nil,
-    clone = nil,
-    connection = nil
+    originalCF = nil
 }
 
 local function SetInvisibility(enabled)
@@ -1216,86 +1192,35 @@ local function SetInvisibility(enabled)
     if not humanoid or not hrp then return end
 
     if enabled then
-        -- Se já está ativo, não faz nada
-        if InvisibilityData.clone then return end
+        -- Se já está invisível, não faz nada
+        if InvisibilityData.originalCF then return end
 
-        -- Salva a posição original
-        local originalCF = hrp.CFrame
-        InvisibilityData.realCharCFrame = originalCF
+        -- Salva a posição original para poder desativar depois
+        InvisibilityData.originalCF = hrp.CFrame
 
-        -- Move o personagem real para baixo do mapa (fora da visão)
-        hrp.CFrame = originalCF * CFrame.new(0, -5000, 0)
-        humanoid.PlatformStand = true   -- impede queda infinita
-        humanoid.WalkSpeed = 0
-        humanoid.JumpPower = 0
+        -- Move o personagem para baixo do mapa (Y = -5000)
+        hrp.CFrame = CFrame.new(hrp.Position.X, -5000, hrp.Position.Z)
 
-        -- Cria um clone do personagem no local original
-        local clone = character:Clone()
-        clone.Name = "InvisibilityClone"
-        clone.HumanoidRootPart.CFrame = originalCF
-        clone.HumanoidRootPart.Anchored = false
-        clone.HumanoidRootPart.CanCollide = false
-        -- Torna todas as partes do clone visíveis (transparência 0)
-        for _, part in ipairs(clone:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.Transparency = 0
-                part.CanCollide = false
-                part.Anchored = false
-            end
-        end
-        -- Remove scripts desnecessários (opcional)
-        for _, script in ipairs(clone:GetDescendants()) do
-            if script:IsA("Script") or script:IsA("LocalScript") then
-                script:Destroy()
-            end
-        end
-        clone.Parent = workspace
-        InvisibilityData.clone = clone
+        -- Ativa Flying para não cair (equivale a "deitado" sem cair no void)
+        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
+        humanoid.PlatformStand = true  -- opcional, ajuda a manter posição
 
-        -- Sincroniza a posição do clone com o personagem real (que está embaixo)
-        InvisibilityData.connection = RunService.RenderStepped:Connect(function()
-            if not Settings.InvisibilityEnabled or not clone or not character or not hrp then
-                return
-            end
-            local realPos = hrp.Position
-            -- O clone deve ficar na mesma posição X/Z, mas com Y = realPos.Y + 5000 (para subir à superfície)
-            local clonePos = Vector3.new(realPos.X, realPos.Y + 5000, realPos.Z)
-            clone:SetPrimaryPartCFrame(CFrame.new(clonePos) * (clone.HumanoidRootPart.CFrame - clone.HumanoidRootPart.Position))
-        end)
-
-        Notify("Invisibilidade", "Ativada – você vê seu clone, outros veem você embaixo.")
+        Notify("Invisibilidade", "Ativada – seu corpo está abaixo do mapa.")
     else
-        -- Desativa: remove o clone e traz o personagem de volta
-        if InvisibilityData.connection then
-            InvisibilityData.connection:Disconnect()
-            InvisibilityData.connection = nil
-        end
-        if InvisibilityData.clone then
-            InvisibilityData.clone:Destroy()
-            InvisibilityData.clone = nil
-        end
-        if character and hrp and InvisibilityData.realCharCFrame then
-            hrp.CFrame = InvisibilityData.realCharCFrame
+        -- Retorna à posição original
+        if InvisibilityData.originalCF and hrp then
+            hrp.CFrame = InvisibilityData.originalCF
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
             humanoid.PlatformStand = false
-            humanoid.WalkSpeed = 16
-            humanoid.JumpPower = 50
         end
-        InvisibilityData.realCharCFrame = nil
+        InvisibilityData.originalCF = nil
         Notify("Invisibilidade", "Desativada.")
     end
 end
 
--- Limpeza quando o personagem morre ou é recriado
+-- Limpeza ao trocar de personagem
 LocalPlayer.CharacterAdded:Connect(function()
-    if InvisibilityData.clone then
-        InvisibilityData.clone:Destroy()
-        InvisibilityData.clone = nil
-    end
-    if InvisibilityData.connection then
-        InvisibilityData.connection:Disconnect()
-        InvisibilityData.connection = nil
-    end
-    InvisibilityData.realCharCFrame = nil
+    InvisibilityData.originalCF = nil
 end)
 
 -- ==================== FUNÇÕES DE TELEPORTE ====================
