@@ -412,12 +412,29 @@ local function CreateModernUI()
     CreateTab("Teleport")
     CreateTab("Settings")
 
-    -- Selecionar a aba inicial
-    if UIComponents.TabButtons[UISettings.CurrentTab] and UIComponents.TabButtons[UISettings.CurrentTab].Select then
-        UIComponents.TabButtons[UISettings.CurrentTab].Select()
-    else
-        UIComponents.TabButtons["Main"].Select()
+-- Função auxiliar para selecionar uma aba manualmente
+local function SelectTab(tabName)
+    for _, btn in pairs(UIComponents.TabButtons) do
+        btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
     end
+    for _, cont in pairs(UIComponents.TabContents) do
+        cont.Visible = false
+    end
+    local selectedButton = UIComponents.TabButtons[tabName]
+    local selectedContent = UIComponents.TabContents[tabName]
+    if selectedButton and selectedContent then
+        selectedButton.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
+        selectedContent.Visible = true
+        UISettings.CurrentTab = tabName
+    end
+end
+
+-- Selecionar a aba inicial
+if UIComponents.TabButtons[UISettings.CurrentTab] then
+    SelectTab(UISettings.CurrentTab)
+else
+    SelectTab("Main")
+end
 
     sg.Parent = CoreGui -- Anexar ao CoreGui para persistência
 end
