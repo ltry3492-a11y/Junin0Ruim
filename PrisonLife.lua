@@ -1179,14 +1179,12 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE CORRIGIDA ====================
+-- ==================== INVISIBILIDADE COM CLONE FANTASMA ====================
 local InvisibilityData = {
     active = false,
     originalCF = nil,
-    originalCameraCF = nil,
-    connection = nil,
-    cameraTypeBackup = nil,
-    cameraSubjectBackup = nil
+    clone = nil,
+    connection = nil
 }
 
 local function SetInvisibility(enabled)
@@ -1196,55 +1194,89 @@ local function SetInvisibility(enabled)
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not humanoid or not hrp then return end
 
-    local camera = workspace.CurrentCamera
-
     if enabled then
         if InvisibilityData.active then return end
 
-        -- Salva dados originais
-        InvisibilityData.originalCF = hrp.CFrame
-        InvisibilityData.originalCameraCF = camera.CFrame
-        InvisibilityData.cameraTypeBackup = camera.CameraType
-        InvisibilityData.cameraSubjectBackup = camera.CameraSubject
+        -- Salva posição original
+        local originalCF = hrp.CFrame
+        InvisibilityData.originalCF = originalCF
 
-        -- Move o personagem para baixo do mapa (Y = -5000)
-        hrp.CFrame = CFrame.new(hrp.Position.X, -5000, hrp.Position.Z)
+        -- Move corpo real para baixo do mapa (Y = -5000)
+        hrp.CFrame = CFrame.new(originalCF.Position.X, -5000, originalCF.Position.Z)
 
-        -- Desativa colisão de todas as partes do personagem (atravessa tudo)
+        -- Desativa colisão do corpo real (atravessa tudo)
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
             end
         end
 
-        -- Configura câmera para ficar fixa na superfície
-        camera.CameraType = Enum.CameraType.Scriptable
-        camera.CFrame = InvisibilityData.originalCameraCF
-        camera.CameraSubject = nil  -- impede que a câmera tente seguir algo
+        -- Cria clone fantasma na superfície
+        local clone = character:Clone()
+        clone.Name = "InvisibilityClone"
+        clone.HumanoidRootPart.CFrame = originalCF
+        clone.HumanoidRootPart.Anchored = false
+        clone.HumanoidRootPart.CanCollide = false
 
-        -- Mantém a câmera fixa a cada frame
+        -- Torna o clone levemente transparente
+        for _, part in ipairs(clone:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Transparency = 0.5
+                part.CanCollide = false
+                part.Anchored = false
+            end
+        end
+
+        -- Remove scripts do clone para evitar conflitos
+        for _, script in ipairs(clone:GetDescendants()) do
+            if script:IsA("Script") or script:IsA("LocalScript") then
+                script:Destroy()
+            end
+        end
+
+        clone.Parent = workspace
+        InvisibilityData.clone = clone
+
+        -- Faz a câmera seguir o clone
+        workspace.CurrentCamera.CameraSubject = clone.Humanoid
+
+        -- Sincroniza posição do clone com o corpo real (mantém X/Z, Y fixo na superfície)
         InvisibilityData.connection = RunService.RenderStepped:Connect(function()
-            if not Settings.InvisibilityEnabled then return end
-            camera.CameraType = Enum.CameraType.Scriptable
-            camera.CFrame = InvisibilityData.originalCameraCF
+            if not Settings.InvisibilityEnabled or not InvisibilityData.clone or not hrp then
+                return
+            end
+            local realPos = hrp.Position
+            local clonePos = Vector3.new(realPos.X, originalCF.Position.Y, realPos.Z)
+            InvisibilityData.clone:SetPrimaryPartCFrame(CFrame.new(clonePos))
         end)
 
         InvisibilityData.active = true
-        Notify("Invisibilidade", "Ativada – corpo no subsolo, câmera na superfície.")
+        Notify("Invisibilidade", "Ativada – corpo no subsolo, clone fantasma na superfície.")
     else
         if InvisibilityData.connection then
             InvisibilityData.connection:Disconnect()
             InvisibilityData.connection = nil
         end
 
-        -- Restaura personagem
-        if hrp and InvisibilityData.originalCF then
-            hrp.CFrame = InvisibilityData.originalCF
+        -- Remove o clone
+        if InvisibilityData.clone then
+            InvisibilityData.clone:Destroy()
+            InvisibilityData.clone = nil
         end
 
-        -- Restaura câmera
-        camera.CameraType = InvisibilityData.cameraTypeBackup or Enum.CameraType.Custom
-        camera.CameraSubject = InvisibilityData.cameraSubjectBackup or LocalPlayer.Character
+        -- Restaura corpo real para a posição original
+        if hrp and InvisibilityData.originalCF then
+            hrp.CFrame = InvisibilityData.originalCF
+            -- Reativa colisão (opcional)
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+
+        -- Restaura câmera para seguir o personagem real
+        workspace.CurrentCamera.CameraSubject = humanoid
 
         InvisibilityData.active = false
         InvisibilityData.originalCF = nil
@@ -1258,6 +1290,7 @@ LocalPlayer.CharacterAdded:Connect(function()
         SetInvisibility(false)
     end
 end)
+
 -- ==================== FUNÇÕES DE TELEPORTE ====================
 local function Teleport(position)
     local char = LocalPlayer.Character
