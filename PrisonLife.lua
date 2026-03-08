@@ -59,7 +59,11 @@ local function ToggleUI()
     if IsMobile and not UISettings.Visible and UIComponents and UIComponents.ScreenGui and UIComponents.ScreenGui:FindFirstChild("ToggleUIButton") then
         UIComponents.ScreenGui.ToggleUIButton.Visible = true
     end
-    Notify("UI", UISettings.Visible and "Mostrada" or "Escondida")
+    if _G.Notify then
+        _G.Notify("UI", UISettings.Visible and "Mostrada" or "Escondida")
+    elseif Notify then
+        Notify("UI", UISettings.Visible and "Mostrada" or "Escondida")
+    end
 end
 
 -- Coordenadas das armas
@@ -78,13 +82,14 @@ local SavedCFrame = nil
 -- Função auxiliar de notificação
 local function Notify(title, text)
     pcall(function()
-        StarterGui:SetCore("SendNotification", {
+        game:GetService("StarterGui"):SetCore("SendNotification", {
             Title = title,
             Text = text,
             Duration = 3,
         })
     end)
 end
+_G.Notify = Notify
 
 -- ==================== FUNÇÕES DE SERIALIZAÇÃO ====================
 local function SerializeSettings()
@@ -1631,7 +1636,9 @@ local function InitializeUI()
     MakeDraggable(mainFrame, mainFrame:FindFirstChild("Header"))
 
     -- Fechar
-    UIComponents.CloseButton.MouseButton1Click:Connect(ToggleUI)
+    if UIComponents.CloseButton then
+        UIComponents.CloseButton.MouseButton1Click:Connect(ToggleUI)
+    end
 
     SwitchTab("Main")
     return screenGui
