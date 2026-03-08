@@ -1204,95 +1204,96 @@ end
 -- ==================== INVISIBILIDADE CORRIGIDA ====================
 local InvisibilityData = {
     realCharCFrame = nil,
-    fakeHead = nil,
-    fakeHeadConnection = nil
+    clone = nil,
+    connection = nil
 }
 
 local function SetInvisibility(enabled)
     local character = LocalPlayer.Character
     if not character then return end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
-    local realHead = character:FindFirstChild("Head")
-    if not humanoid or not realHead then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not hrp then return end
 
     if enabled then
-        -- Se já estava invisível, não faz nada
-        if InvisibilityData.fakeHead then return end
+        -- Se já está ativo, não faz nada
+        if InvisibilityData.clone then return end
 
-        -- 1. Salva posição atual do personagem
-        local hrp = character:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        InvisibilityData.realCharCFrame = hrp.CFrame
+        -- Salva a posição original
+        local originalCF = hrp.CFrame
+        InvisibilityData.realCharCFrame = originalCF
 
-        -- 2. Move o personagem para baixo do mapa (fora da visão)
-        hrp.CFrame = hrp.CFrame * CFrame.new(0, -5000, 0)
+        -- Move o personagem real para baixo do mapa (fora da visão)
+        hrp.CFrame = originalCF * CFrame.new(0, -5000, 0)
         humanoid.PlatformStand = true   -- impede queda infinita
         humanoid.WalkSpeed = 0
         humanoid.JumpPower = 0
 
-        -- 3. Cria uma cabeça falsa na posição original para exibir o nome
-        local fakeHead = realHead:Clone()
-        fakeHead.Name = "FakeHead_Invisibility"
-        fakeHead.Transparency = 1        -- invisível, mas o BillboardGui ainda aparece
-        fakeHead.Anchored = true
-        fakeHead.CanCollide = false
-        fakeHead.CFrame = realHead.CFrame   -- posição original
-        fakeHead.Parent = workspace
+        -- Cria um clone do personagem no local original
+        local clone = character:Clone()
+        clone.Name = "InvisibilityClone"
+        clone.HumanoidRootPart.CFrame = originalCF
+        clone.HumanoidRootPart.Anchored = false
+        clone.HumanoidRootPart.CanCollide = false
+        -- Torna todas as partes do clone visíveis (transparência 0)
+        for _, part in ipairs(clone:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.Transparency = 0
+                part.CanCollide = false
+                part.Anchored = false
+            end
+        end
+        -- Remove scripts desnecessários (opcional)
+        for _, script in ipairs(clone:GetDescendants()) do
+            if script:IsA("Script") or script:IsA("LocalScript") then
+                script:Destroy()
+            end
+        end
+        clone.Parent = workspace
+        InvisibilityData.clone = clone
 
-        -- 4. Cria um BillboardGui com o nome do jogador
-        local billboard = Instance.new("BillboardGui")
-        billboard.Name = "NameTag"
-        billboard.Size = UDim2.new(0, 200, 0, 50)
-        billboard.StudsOffset = Vector3.new(0, 3, 0)  -- acima da cabeça
-        billboard.AlwaysOnTop = true
-        billboard.Parent = fakeHead
+        -- Sincroniza a posição do clone com o personagem real (que está embaixo)
+        InvisibilityData.connection = RunService.RenderStepped:Connect(function()
+            if not Settings.InvisibilityEnabled or not clone or not character or not hrp then
+                return
+            end
+            local realPos = hrp.Position
+            -- O clone deve ficar na mesma posição X/Z, mas com Y = realPos.Y + 5000 (para subir à superfície)
+            local clonePos = Vector3.new(realPos.X, realPos.Y + 5000, realPos.Z)
+            clone:SetPrimaryPartCFrame(CFrame.new(clonePos) * (clone.HumanoidRootPart.CFrame - clone.HumanoidRootPart.Position))
+        end)
 
-        local nameLabel = Instance.new("TextLabel")
-        nameLabel.Size = UDim2.new(1, 0, 1, 0)
-        nameLabel.BackgroundTransparency = 1
-        nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-        nameLabel.TextStrokeTransparency = 0.5
-        nameLabel.Text = LocalPlayer.Name
-        nameLabel.Font = Enum.Font.GothamBold
-        nameLabel.TextSize = 18
-        nameLabel.Parent = billboard
-
-        InvisibilityData.fakeHead = fakeHead
-
-        -- 5. Atualiza a posição da cabeça falsa caso o personagem tente se mover (opcional)
-        --    (mas como o personagem está parado e com velocidade zero, não é necessário)
-
-        Notify("Invisibilidade", "Ativada – corpo abaixo do mapa, nome visível.")
+        Notify("Invisibilidade", "Ativada – você vê seu clone, outros veem você embaixo.")
     else
-        -- Desativa invisibilidade
-        if InvisibilityData.fakeHead then
-            InvisibilityData.fakeHead:Destroy()
-            InvisibilityData.fakeHead = nil
+        -- Desativa: remove o clone e traz o personagem de volta
+        if InvisibilityData.connection then
+            InvisibilityData.connection:Disconnect()
+            InvisibilityData.connection = nil
         end
-
-        -- Retorna o personagem à posição original
-        local hrp = character:FindFirstChild("HumanoidRootPart")
-        if hrp and InvisibilityData.realCharCFrame then
+        if InvisibilityData.clone then
+            InvisibilityData.clone:Destroy()
+            InvisibilityData.clone = nil
+        end
+        if character and hrp and InvisibilityData.realCharCFrame then
             hrp.CFrame = InvisibilityData.realCharCFrame
+            humanoid.PlatformStand = false
+            humanoid.WalkSpeed = 16
+            humanoid.JumpPower = 50
         end
-
-        -- Restaura Humanoid
-        humanoid.PlatformStand = false
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
-
         InvisibilityData.realCharCFrame = nil
-
         Notify("Invisibilidade", "Desativada.")
     end
 end
 
--- Caso o personagem morra ou seja carregado novamente, limpa os objetos
+-- Limpeza quando o personagem morre ou é recriado
 LocalPlayer.CharacterAdded:Connect(function()
-    if InvisibilityData.fakeHead then
-        InvisibilityData.fakeHead:Destroy()
-        InvisibilityData.fakeHead = nil
+    if InvisibilityData.clone then
+        InvisibilityData.clone:Destroy()
+        InvisibilityData.clone = nil
+    end
+    if InvisibilityData.connection then
+        InvisibilityData.connection:Disconnect()
+        InvisibilityData.connection = nil
     end
     InvisibilityData.realCharCFrame = nil
 end)
