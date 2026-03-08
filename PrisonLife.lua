@@ -1173,13 +1173,14 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE CORRIGIDA (CORPO ABAIXO DO CHÃO + CLONE) ====================
+-- ==================== INVISIBILIDADE CORRIGIDA (INVERSA) ====================
 local InvisibilityData = {
     originalCF = nil,
     groundLevel = nil,
+    realChar = nil,
+    realHRP = nil,
     clone = nil,
     connection = nil,
-    cloneSync = nil,
     active = false
 }
 
@@ -1209,46 +1210,18 @@ local function SetInvisibility(enabled)
             InvisibilityData.groundLevel = pos.Y - 50 -- fallback
         end
 
-        -- Move o personagem para 3 studs abaixo do chão
-        local newY = InvisibilityData.groundLevel - 3
-        hrp.CFrame = CFrame.new(pos.X, newY, pos.Z)
-
-        -- Desativa colisão de TODAS as partes do corpo real (atravessa tudo)
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-
-        -- Garante que continue sem colisão (alguns scripts podem reativar)
-        InvisibilityData.connection = RunService.Stepped:Connect(function()
-            if not Settings.InvisibilityEnabled or not character then return end
-            for _, part in ipairs(character:GetDescendants()) do
-                if part:IsA("BasePart") and part.CanCollide then
-                    part.CanCollide = false
-                end
-            end
-        end)
-
-        -- Configura o Humanoid para poder se mover (mas sem cair)
-        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
-        humanoid.PlatformStand = false
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
-
-        -- Cria clone fantasma na superfície (na posição original)
+        -- Cria um clone COMPLETO do personagem na superfície
         local clone = character:Clone()
-        clone.Name = "InvisibilityClone"
+        clone.Name = "MainCharacter_Clone"
         clone.HumanoidRootPart.CFrame = InvisibilityData.originalCF
         clone.HumanoidRootPart.Anchored = false
-        clone.HumanoidRootPart.CanCollide = false
+        clone.HumanoidRootPart.CanCollide = true  -- clone colide normalmente
 
-        -- Torna o clone transparente (0.5) e sem colisão
+        -- Torna o clone levemente transparente para você saber que é cópia
         for _, part in ipairs(clone:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.Transparency = 0.5
-                part.CanCollide = false
-                part.Anchored = false
+                part.Transparency = 0.3
+                part.CanCollide = true
             end
         end
 
@@ -1262,38 +1235,73 @@ local function SetInvisibility(enabled)
         clone.Parent = workspace
         InvisibilityData.clone = clone
 
-        -- Faz a câmera seguir o clone
+        -- Move o corpo REAL para baixo do chão
+        local newY = InvisibilityData.groundLevel - 5
+        hrp.CFrame = CFrame.new(pos.X, newY, pos.Z)
+
+        -- Desativa colisão do corpo real (atravessa tudo)
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+
+        -- Configura o Humanoid do corpo real para não se mover
+        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
+        humanoid.PlatformStand = true
+        humanoid.WalkSpeed = 0
+        humanoid.JumpPower = 0
+
+        -- Agora a câmera deve seguir o CLONE
         workspace.CurrentCamera.CameraSubject = clone.Humanoid
 
-        -- Sincroniza posição do clone com o corpo real (mantém X/Z, Y fixo na superfície)
-        local surfaceY = InvisibilityData.originalCF.Position.Y
-        InvisibilityData.cloneSync = RunService.RenderStepped:Connect(function()
+        -- Loop de sincronização: o clone recebe os comandos de movimento
+        -- O corpo real apenas copia a posição do clone (mas no subsolo)
+        InvisibilityData.connection = RunService.RenderStepped:Connect(function()
             if not Settings.InvisibilityEnabled or not clone or not hrp then return end
-            local realPos = hrp.Position
-            clone:SetPrimaryPartCFrame(CFrame.new(realPos.X, surfaceY, realPos.Z))
+
+            -- Posição do clone (superfície)
+            local clonePos = clone.HumanoidRootPart.Position
+
+            -- Move o corpo real para a mesma posição X/Z do clone, mas no subsolo
+            hrp.CFrame = CFrame.new(clonePos.X, newY, clonePos.Z)
+
+            -- Garante que o clone continue com colisão normal
+            -- e que o corpo real continue sem colisão
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
         end)
 
+        -- Esconde o corpo real localmente (opcional)
+        -- Se quiser que você NÃO veja o corpo real, aumente a transparência
+        -- for _, part in ipairs(character:GetDescendants()) do
+        --     if part:IsA("BasePart") then
+        --         part.Transparency = 1
+        --     end
+        -- end
+
         InvisibilityData.active = true
-        Notify("Invisibilidade", "Ativada – corpo no subsolo, clone fantasma na superfície.")
+        Notify("Invisibilidade", "Ativada – clone na superfície, corpo real no subsolo.")
     else
         -- Desativa
         if InvisibilityData.connection then
             InvisibilityData.connection:Disconnect()
             InvisibilityData.connection = nil
         end
-        if InvisibilityData.cloneSync then
-            InvisibilityData.cloneSync:Disconnect()
-            InvisibilityData.cloneSync = nil
-        end
+
+        -- Remove o clone
         if InvisibilityData.clone then
             InvisibilityData.clone:Destroy()
             InvisibilityData.clone = nil
         end
 
-        -- Restaura corpo real
+        -- Restaura corpo real para a posição original
         if hrp and InvisibilityData.originalCF then
             hrp.CFrame = InvisibilityData.originalCF
-            -- Reativa colisão (opcional)
+            -- Reativa colisão
             for _, part in ipairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = true
