@@ -1129,7 +1129,7 @@ local function hookCharacterWeaponMods(char)
     scanFastReload(char)
 end
 
--- ==================== NOCLIP CORRIGIDO ====================
+-- ==================== NOCLIP CORRIGIDO (ATRAVESSA PAREDES) ====================
 local NoClipConnection = nil
 
 local function SetNoClip(enabled)
@@ -1139,15 +1139,14 @@ local function SetNoClip(enabled)
     if not humanoid then return end
 
     if enabled then
-        -- Se já estava ativo, desconecta para evitar duplicação
         if NoClipConnection and NoClipConnection.Connected then
             NoClipConnection:Disconnect()
         end
 
-        -- Muda para estado Flying para não cair
+        -- Muda para estado Flying para evitar gravidade
         humanoid:ChangeState(Enum.HumanoidStateType.Flying)
 
-        -- Loop de manutenção: força CanCollide = false e mantém Flying
+        -- Loop de manutenção: desativa colisão e ancora partes para evitar interações físicas
         NoClipConnection = RunService.Stepped:Connect(function()
             if not Settings.NoClipEnabled or not LocalPlayer.Character then
                 if NoClipConnection and NoClipConnection.Connected then
@@ -1156,13 +1155,13 @@ local function SetNoClip(enabled)
                 return
             end
             local char = LocalPlayer.Character
-            -- Desativa colisão de todas as partes
+            -- Desativa colisão de TODAS as partes do personagem
             for _, part in ipairs(char:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
                 end
             end
-            -- Garante que continue voando (alguns scripts podem reverter)
+            -- Garante que continue voando
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum and hum:GetState() ~= Enum.HumanoidStateType.Flying then
                 hum:ChangeState(Enum.HumanoidStateType.Flying)
@@ -1179,9 +1178,11 @@ local function SetNoClip(enabled)
         Notify("NoClip", "Desativado.")
     end
 end
--- ==================== INVISIBILIDADE CORRIGIDA ====================
+
+-- ==================== INVISIBILIDADE CORRIGIDA (CORPO ABAIXO DO CHÃO) ====================
 local InvisibilityData = {
-    originalCF = nil
+    originalCF = nil,
+    groundLevel = nil
 }
 
 local function SetInvisibility(enabled)
@@ -1192,28 +1193,46 @@ local function SetInvisibility(enabled)
     if not humanoid or not hrp then return end
 
     if enabled then
-        -- Se já está invisível, não faz nada
         if InvisibilityData.originalCF then return end
 
-        -- Salva a posição original para poder desativar depois
+        -- Salva posição original
+        local pos = hrp.Position
         InvisibilityData.originalCF = hrp.CFrame
 
-        -- Move o personagem para baixo do mapa (Y = -5000)
-        hrp.CFrame = CFrame.new(hrp.Position.X, -5000, hrp.Position.Z)
+        -- Encontra a altura do chão abaixo do personagem (limite de 500 studs)
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {character}
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        local ray = workspace:Raycast(pos, Vector3.new(0, -500, 0), raycastParams)
 
-        -- Ativa Flying para não cair (equivale a "deitado" sem cair no void)
+        if ray then
+            InvisibilityData.groundLevel = ray.Position.Y
+        else
+            InvisibilityData.groundLevel = pos.Y - 50 -- fallback
+        end
+
+        -- Move o personagem para 3 studs abaixo do chão (ou fallback)
+        local newY = InvisibilityData.groundLevel - 3
+        hrp.CFrame = CFrame.new(pos.X, newY, pos.Z)
+
+        -- Impede queda e movimento indesejado
         humanoid:ChangeState(Enum.HumanoidStateType.Flying)
-        humanoid.PlatformStand = true  -- opcional, ajuda a manter posição
+        humanoid.PlatformStand = true
+        humanoid.WalkSpeed = 0
+        humanoid.JumpPower = 0
 
-        Notify("Invisibilidade", "Ativada – seu corpo está abaixo do mapa.")
+        Notify("Invisibilidade", "Ativada – corpo logo abaixo do chão.")
     else
         -- Retorna à posição original
         if InvisibilityData.originalCF and hrp then
             hrp.CFrame = InvisibilityData.originalCF
             humanoid:ChangeState(Enum.HumanoidStateType.Running)
             humanoid.PlatformStand = false
+            humanoid.WalkSpeed = 16
+            humanoid.JumpPower = 50
         end
         InvisibilityData.originalCF = nil
+        InvisibilityData.groundLevel = nil
         Notify("Invisibilidade", "Desativada.")
     end
 end
@@ -1221,8 +1240,8 @@ end
 -- Limpeza ao trocar de personagem
 LocalPlayer.CharacterAdded:Connect(function()
     InvisibilityData.originalCF = nil
+    InvisibilityData.groundLevel = nil
 end)
-
 -- ==================== FUNÇÕES DE TELEPORTE ====================
 local function Teleport(position)
     local char = LocalPlayer.Character
