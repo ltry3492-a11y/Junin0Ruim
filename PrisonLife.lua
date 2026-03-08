@@ -1173,11 +1173,47 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE COM TWEENSERVICE (TRANSIÇÃO SUAVE) ====================
-local RunService = game:GetService("RunService")
+-- ==================== INVISIBILIDADE DEFINITIVA (TEMPO REAL + SEM ERROS) ====================
 local TweenService = game:GetService("TweenService")
-local LocalPlayer = game:GetService("Players").LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ContextActionService = game:GetService("ContextActionService")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local CoreGui = game:GetService("CoreGui")
 
+local LocalPlayer = Players.LocalPlayer
+local backpack = LocalPlayer:WaitForChild("Backpack")
+
+-- Configurações
+local Settings = {
+    Enabled = true,
+    TeamCheck = true,
+    WallCheck = true,
+    DeathCheck = true,
+    ForceFieldCheck = true,
+    HitChance = 75,
+    MissSpread = 5,
+    FOV = 150,
+    AimPart = "Head",
+    RandomAimParts = false,
+    AimPartsList = {"Head", "Torso", "HumanoidRootPart", "LeftArm", "RightArm", "LeftLeg", "RightLeg"},
+    ToggleKey = Enum.KeyCode.RightShift,
+    ShowFOV = true,
+    ShowTargetLine = false,
+    ESPEnabled = false,
+    ESPFillerTransparency = 0.75,
+    ESPOutlineColor = Color3.fromRGB(255, 255, 255),
+    ESPDepthMode = Enum.HighlightDepthMode.AlwaysOnTop,
+    RapidFireEnabled = false,
+    FastReloadEnabled = false,
+    NoClipEnabled = false,
+    InvisibilityEnabled = false,
+}
+
+-- Variáveis de Invisibilidade (DEFINIDAS NO TOPO PARA EVITAR NIL)
 local InvisibilityData = {
     originalCF = nil,
     groundLevel = nil,
@@ -1189,45 +1225,43 @@ local InvisibilityData = {
     newY = 0
 }
 
--- Configuração do Tween
 local TWEEN_INFO = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
--- Função Global para ser acessada pela UI
-_G.SetInvisibility = function(enabled)
+-- Função de Notificação
+local function Notify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 3,
+        })
+    end)
+end
+
+-- FUNÇÃO DE INVISIBILIDADE (DEFINIDA ANTES DA UI)
+local function SetInvisibility(enabled)
     local character = LocalPlayer.Character
-    if not character then 
-        Notify("Erro", "Personagem não encontrado")
-        return 
-    end
+    if not character then return end
     
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     local hrp = character:FindFirstChild("HumanoidRootPart")
     
-    if not humanoid or not hrp then 
-        Notify("Erro", "Humanoid ou HRP não encontrado")
-        return 
-    end
+    if not humanoid or not hrp then return end
 
     if enabled then
         if InvisibilityData.active then return end
 
-        -- Salva posição original
         local pos = hrp.Position
         InvisibilityData.originalCF = hrp.CFrame
 
-        -- Encontra a altura do chão abaixo do personagem
+        -- Raycast para o chão
         local raycastParams = RaycastParams.new()
         raycastParams.FilterDescendantsInstances = {character}
         raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
         local ray = workspace:Raycast(pos, Vector3.new(0, -500, 0), raycastParams)
+        InvisibilityData.groundLevel = ray and ray.Position.Y or (pos.Y - 50)
 
-        if ray then
-            InvisibilityData.groundLevel = ray.Position.Y
-        else
-            InvisibilityData.groundLevel = pos.Y - 50 -- fallback
-        end
-
-        -- Cria um clone COMPLETO do personagem na superfície
+        -- Clone
         character.Archivable = true
         local clone = character:Clone()
         character.Archivable = false
@@ -1237,7 +1271,6 @@ _G.SetInvisibility = function(enabled)
         local cloneHumanoid = clone:FindFirstChildOfClass("Humanoid")
         
         if not cloneHRP or not cloneHumanoid then
-            Notify("Erro", "Falha ao criar clone funcional")
             if clone then clone:Destroy() end
             return
         end
@@ -1246,7 +1279,6 @@ _G.SetInvisibility = function(enabled)
         cloneHRP.Anchored = false
         cloneHRP.CanCollide = true
 
-        -- Estética do clone
         for _, part in ipairs(clone:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.Transparency = 0.3
@@ -1254,11 +1286,9 @@ _G.SetInvisibility = function(enabled)
             end
         end
 
-        -- Mantém o script de animação no clone
+        -- Preserva animações
         for _, script in ipairs(clone:GetDescendants()) do
-            if (script:IsA("Script") or script:IsA("LocalScript")) and script.Name == "Animate" then
-                -- Mantém o script de animação
-            elseif script:IsA("Script") or script:IsA("LocalScript") then
+            if (script:IsA("Script") or script:IsA("LocalScript")) and script.Name ~= "Animate" then
                 script:Destroy()
             end
         end
@@ -1266,28 +1296,22 @@ _G.SetInvisibility = function(enabled)
         clone.Parent = workspace
         InvisibilityData.clone = clone
 
-        -- TWEEN DE ENTRADA: Move o corpo REAL para o subsolo suavemente
+        -- Movimento Inicial (Tween Suave)
         InvisibilityData.newY = InvisibilityData.groundLevel - 25
         local targetCF = CFrame.new(pos.X, InvisibilityData.newY, pos.Z)
         
-        -- Desativa colisão ANTES do movimento
         for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
+            if part:IsA("BasePart") then part.CanCollide = false end
         end
         
         hrp.Anchored = true
         local entryTween = TweenService:Create(hrp, TWEEN_INFO, {CFrame = targetCF})
         entryTween:Play()
 
-        -- Configura o Humanoid do corpo real
         humanoid.PlatformStand = true
-        
-        -- Foca a câmera no clone
         workspace.CurrentCamera.CameraSubject = cloneHumanoid
 
-        -- Loop de sincronização
+        -- SINCRONIZAÇÃO EM TEMPO REAL (SEM ATRASO)
         InvisibilityData.connection = RunService.RenderStepped:Connect(function()
             if not InvisibilityData.active or not clone or not hrp then 
                 if InvisibilityData.connection then InvisibilityData.connection:Disconnect() end
@@ -1296,32 +1320,26 @@ _G.SetInvisibility = function(enabled)
 
             if not clone.Parent then return end
 
-            -- 1. Sincroniza o movimento
+            -- Movimento do Clone baseado no Input do Jogador
             local moveDirection = humanoid.MoveDirection
             cloneHumanoid:Move(moveDirection, false)
-            
-            -- 2. Sincroniza o pulo
             cloneHumanoid.Jump = humanoid.Jump
 
-            -- 3. O corpo real segue o clone no subsolo
+            -- O corpo real segue o clone INSTANTANEAMENTE no subsolo
+            -- Usamos CFrame direto no RenderStepped para sincronia perfeita
             local clonePos = cloneHRP.Position
-            hrp.CFrame = CFrame.new(clonePos.X, InvisibilityData.newY, clonePos.Z)
+            hrp.CFrame = CFrame.new(clonePos.X, InvisibilityData.newY, clonePos.Z) * cloneHRP.CFrame.Rotation
 
-            -- Mantém colisão desativada no real
+            -- Garante colisão desativada
             for _, part in ipairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
+                if part:IsA("BasePart") then part.CanCollide = false end
             end
         end)
 
-        InvisibilityData.realChar = character
-        InvisibilityData.realHRP = hrp
         InvisibilityData.active = true
-        
-        Notify("Invisibilidade", "Ativada - Transição suave.")
+        Notify("Invisibilidade", "Ativada - Tempo Real")
     else
-        -- DESATIVAÇÃO COM TWEEN DE SAÍDA
+        -- Desativação
         if InvisibilityData.connection then
             InvisibilityData.connection:Disconnect()
             InvisibilityData.connection = nil
@@ -1330,35 +1348,23 @@ _G.SetInvisibility = function(enabled)
         local finalCFrame = nil
         if InvisibilityData.clone then
             local cloneHRP = InvisibilityData.clone:FindFirstChild("HumanoidRootPart")
-            if cloneHRP then
-                finalCFrame = cloneHRP.CFrame
-            end
+            if cloneHRP then finalCFrame = cloneHRP.CFrame end
             InvisibilityData.clone:Destroy()
             InvisibilityData.clone = nil
         end
 
-        -- TWEEN DE SAÍDA
         if hrp and finalCFrame then
             local exitTween = TweenService:Create(hrp, TWEEN_INFO, {CFrame = finalCFrame})
             exitTween:Play()
-            
             exitTween.Completed:Connect(function()
                 hrp.Anchored = false
                 humanoid.PlatformStand = false
-                
                 for _, part in ipairs(character:GetDescendants()) do
-                    if part:IsA("BasePart") then
-                        part.CanCollide = true
-                    end
-                end
-                
-                if character then
-                    character.Archivable = false
+                    if part:IsA("BasePart") then part.CanCollide = true end
                 end
             end)
         end
 
-        -- Restaura Humanoid e Câmera
         if humanoid then
             humanoid.WalkSpeed = 16
             humanoid.JumpPower = 50
@@ -1366,18 +1372,45 @@ _G.SetInvisibility = function(enabled)
         end
 
         InvisibilityData.active = false
-        Notify("Invisibilidade", "Desativada.")
+        Notify("Invisibilidade", "Desativada")
     end
 end
 
-local SetInvisibility = _G.SetInvisibility
+-- EXPORTA PARA O ESCOPO GLOBAL PARA A UI ENCONTRAR
+_G.SetInvisibility = SetInvisibility
 
--- Limpeza ao trocar de personagem
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-    if InvisibilityData.active then
-        SetInvisibility(false)
+local IsMobile = UserInputService.TouchEnabled or UserInputService.GamepadEnabled
+
+local UISettings = {
+    Visible = true,
+    ToggleUIKey = Enum.KeyCode.Insert,
+    CurrentTab = "Main"
+}
+
+-- ==================== FUNÇÃO DE TOGGLE DA UI ====================
+local UIComponents = { MainFrame = nil, TabButtons = {}, TabContents = {}, CloseButton = nil, ScreenGui = nil }
+
+local function ToggleUI()
+    UISettings.Visible = not UISettings.Visible
+    if UIComponents and UIComponents.MainFrame then
+        UIComponents.MainFrame.Visible = UISettings.Visible
     end
-end)
+    if IsMobile and UIComponents and UIComponents.ScreenGui and UIComponents.ScreenGui:FindFirstChild("ToggleUIButton") then
+        UIComponents.ScreenGui.ToggleUIButton.Visible = not UISettings.Visible
+    end
+    Notify("UI", UISettings.Visible and "Mostrada" or "Escondida")
+end
+
+-- (O RESTANTE DO SEU SCRIPT CONTINUA AQUI...)
+-- Certifique-se de que o botão de Invisibility na sua UI chame:
+-- _G.SetInvisibility(Settings.InvisibilityEnabled)
+
+-- Exemplo de como deve estar o seu CreateToggle para Invisibility:
+-- CreateToggle(playerContent, "Invisibility", Settings.InvisibilityEnabled, function(s) 
+--     Settings.InvisibilityEnabled = s
+--     _G.SetInvisibility(s) 
+-- end)
+
 
 -- ==================== FUNÇÕES DE TELEPORTE ====================
 local function Teleport(position)
@@ -1571,7 +1604,10 @@ local function InitializeUI()
     -- Aba Player
     local playerContent = UIComponents.TabContents["Player"]
     CreateToggle(playerContent, "NoClip", Settings.NoClipEnabled, function(s) Settings.NoClipEnabled = s; SetNoClip(s) end)
-    CreateToggle(playerContent, "Invisibility", Settings.InvisibilityEnabled, function(s) Settings.InvisibilityEnabled = s; SetInvisibility(s) end)
+    CreateToggle(playerContent, "Invisibility", Settings.InvisibilityEnabled, function(s) 
+        Settings.InvisibilityEnabled = s
+        _G.SetInvisibility(Settings.InvisibilityEnabled) 
+    end)
 
     -- Aba Teleport
     local teleportContent = UIComponents.TabContents["Teleport"]
