@@ -1179,12 +1179,13 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE COM CLONE FANTASMA ====================
+-- ==================== INVISIBILIDADE CORRIGIDA (CORPO ABAIXO DO CHÃO + CLONE) ====================
 local InvisibilityData = {
-    active = false,
     originalCF = nil,
+    groundLevel = nil,
     clone = nil,
-    connection = nil
+    connection = nil,
+    active = false
 }
 
 local function SetInvisibility(enabled)
@@ -1198,27 +1199,56 @@ local function SetInvisibility(enabled)
         if InvisibilityData.active then return end
 
         -- Salva posição original
-        local originalCF = hrp.CFrame
-        InvisibilityData.originalCF = originalCF
+        local pos = hrp.Position
+        InvisibilityData.originalCF = hrp.CFrame
 
-        -- Move corpo real para baixo do mapa (Y = -5000)
-        hrp.CFrame = CFrame.new(originalCF.Position.X, -5000, originalCF.Position.Z)
+        -- Encontra a altura do chão abaixo do personagem (limite de 500 studs)
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {character}
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        local ray = workspace:Raycast(pos, Vector3.new(0, -500, 0), raycastParams)
 
-        -- Desativa colisão do corpo real (atravessa tudo)
+        if ray then
+            InvisibilityData.groundLevel = ray.Position.Y
+        else
+            InvisibilityData.groundLevel = pos.Y - 50 -- fallback
+        end
+
+        -- Move o personagem para 3 studs abaixo do chão
+        local newY = InvisibilityData.groundLevel - 3
+        hrp.CFrame = CFrame.new(pos.X, newY, pos.Z)
+
+        -- Desativa colisão de TODAS as partes do corpo real (atravessa tudo)
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
             end
         end
 
-        -- Cria clone fantasma na superfície
+        -- Garante que continue sem colisão (alguns scripts podem reativar)
+        InvisibilityData.connection = RunService.Stepped:Connect(function()
+            if not Settings.InvisibilityEnabled or not character then return end
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") and part.CanCollide then
+                    part.CanCollide = false
+                end
+            end
+        end)
+
+        -- Configura o Humanoid para poder se mover (mas sem cair)
+        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
+        humanoid.PlatformStand = false  -- permite movimento
+        humanoid.WalkSpeed = 16         -- velocidade normal
+        humanoid.JumpPower = 50
+
+        -- Cria clone fantasma na superfície (na posição original)
         local clone = character:Clone()
         clone.Name = "InvisibilityClone"
-        clone.HumanoidRootPart.CFrame = originalCF
+        clone.HumanoidRootPart.CFrame = InvisibilityData.originalCF
         clone.HumanoidRootPart.Anchored = false
         clone.HumanoidRootPart.CanCollide = false
 
-        -- Torna o clone levemente transparente
+        -- Torna o clone transparente (0.5) e sem colisão
         for _, part in ipairs(clone:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.Transparency = 0.5
@@ -1241,30 +1271,32 @@ local function SetInvisibility(enabled)
         workspace.CurrentCamera.CameraSubject = clone.Humanoid
 
         -- Sincroniza posição do clone com o corpo real (mantém X/Z, Y fixo na superfície)
-        InvisibilityData.connection = RunService.RenderStepped:Connect(function()
-            if not Settings.InvisibilityEnabled or not InvisibilityData.clone or not hrp then
-                return
-            end
+        local surfaceY = InvisibilityData.originalCF.Position.Y
+        local cloneSync = RunService.RenderStepped:Connect(function()
+            if not Settings.InvisibilityEnabled or not clone or not hrp then return end
             local realPos = hrp.Position
-            local clonePos = Vector3.new(realPos.X, originalCF.Position.Y, realPos.Z)
-            InvisibilityData.clone:SetPrimaryPartCFrame(CFrame.new(clonePos))
+            clone:SetPrimaryPartCFrame(CFrame.new(realPos.X, surfaceY, realPos.Z))
         end)
+        table.insert(InvisibilityData, cloneSync) -- para desconectar depois
 
         InvisibilityData.active = true
         Notify("Invisibilidade", "Ativada – corpo no subsolo, clone fantasma na superfície.")
     else
+        -- Desativa
         if InvisibilityData.connection then
             InvisibilityData.connection:Disconnect()
             InvisibilityData.connection = nil
         end
-
-        -- Remove o clone
+        if InvisibilityData.cloneSync then
+            InvisibilityData.cloneSync:Disconnect()
+            InvisibilityData.cloneSync = nil
+        end
         if InvisibilityData.clone then
             InvisibilityData.clone:Destroy()
             InvisibilityData.clone = nil
         end
 
-        -- Restaura corpo real para a posição original
+        -- Restaura corpo real
         if hrp and InvisibilityData.originalCF then
             hrp.CFrame = InvisibilityData.originalCF
             -- Reativa colisão (opcional)
@@ -1275,11 +1307,18 @@ local function SetInvisibility(enabled)
             end
         end
 
-        -- Restaura câmera para seguir o personagem real
+        -- Restaura Humanoid
+        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        humanoid.PlatformStand = false
+        humanoid.WalkSpeed = 16
+        humanoid.JumpPower = 50
+
+        -- Restaura câmera
         workspace.CurrentCamera.CameraSubject = humanoid
 
         InvisibilityData.active = false
         InvisibilityData.originalCF = nil
+        InvisibilityData.groundLevel = nil
         Notify("Invisibilidade", "Desativada.")
     end
 end
@@ -1289,6 +1328,8 @@ LocalPlayer.CharacterAdded:Connect(function()
     if InvisibilityData.active then
         SetInvisibility(false)
     end
+    InvisibilityData.originalCF = nil
+    InvisibilityData.groundLevel = nil
 end)
 
 -- ==================== FUNÇÕES DE TELEPORTE ====================
