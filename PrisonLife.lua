@@ -1179,10 +1179,14 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE CORRIGIDA (CORPO ABAIXO DO CHÃO) ====================
+-- ==================== INVISIBILIDADE CORRIGIDA ====================
 local InvisibilityData = {
+    active = false,
     originalCF = nil,
-    groundLevel = nil
+    originalCameraCF = nil,
+    connection = nil,
+    cameraTypeBackup = nil,
+    cameraSubjectBackup = nil
 }
 
 local function SetInvisibility(enabled)
@@ -1192,55 +1196,67 @@ local function SetInvisibility(enabled)
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not humanoid or not hrp then return end
 
+    local camera = workspace.CurrentCamera
+
     if enabled then
-        if InvisibilityData.originalCF then return end
+        if InvisibilityData.active then return end
 
-        -- Salva posição original
-        local pos = hrp.Position
+        -- Salva dados originais
         InvisibilityData.originalCF = hrp.CFrame
+        InvisibilityData.originalCameraCF = camera.CFrame
+        InvisibilityData.cameraTypeBackup = camera.CameraType
+        InvisibilityData.cameraSubjectBackup = camera.CameraSubject
 
-        -- Encontra a altura do chão abaixo do personagem (limite de 500 studs)
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterDescendantsInstances = {character}
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        local ray = workspace:Raycast(pos, Vector3.new(0, -500, 0), raycastParams)
+        -- Move o personagem para baixo do mapa (Y = -5000)
+        hrp.CFrame = CFrame.new(hrp.Position.X, -5000, hrp.Position.Z)
 
-        if ray then
-            InvisibilityData.groundLevel = ray.Position.Y
-        else
-            InvisibilityData.groundLevel = pos.Y - 50 -- fallback
+        -- Desativa colisão de todas as partes do personagem (atravessa tudo)
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
         end
 
-        -- Move o personagem para 3 studs abaixo do chão (ou fallback)
-        local newY = InvisibilityData.groundLevel - 3
-        hrp.CFrame = CFrame.new(pos.X, newY, pos.Z)
+        -- Configura câmera para ficar fixa na superfície
+        camera.CameraType = Enum.CameraType.Scriptable
+        camera.CFrame = InvisibilityData.originalCameraCF
+        camera.CameraSubject = nil  -- impede que a câmera tente seguir algo
 
-        -- Impede queda e movimento indesejado
-        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
-        humanoid.PlatformStand = true
-        humanoid.WalkSpeed = 0
-        humanoid.JumpPower = 0
+        -- Mantém a câmera fixa a cada frame
+        InvisibilityData.connection = RunService.RenderStepped:Connect(function()
+            if not Settings.InvisibilityEnabled then return end
+            camera.CameraType = Enum.CameraType.Scriptable
+            camera.CFrame = InvisibilityData.originalCameraCF
+        end)
 
-        Notify("Invisibilidade", "Ativada – corpo logo abaixo do chão.")
+        InvisibilityData.active = true
+        Notify("Invisibilidade", "Ativada – corpo no subsolo, câmera na superfície.")
     else
-        -- Retorna à posição original
-        if InvisibilityData.originalCF and hrp then
-            hrp.CFrame = InvisibilityData.originalCF
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-            humanoid.PlatformStand = false
-            humanoid.WalkSpeed = 16
-            humanoid.JumpPower = 50
+        if InvisibilityData.connection then
+            InvisibilityData.connection:Disconnect()
+            InvisibilityData.connection = nil
         end
+
+        -- Restaura personagem
+        if hrp and InvisibilityData.originalCF then
+            hrp.CFrame = InvisibilityData.originalCF
+        end
+
+        -- Restaura câmera
+        camera.CameraType = InvisibilityData.cameraTypeBackup or Enum.CameraType.Custom
+        camera.CameraSubject = InvisibilityData.cameraSubjectBackup or LocalPlayer.Character
+
+        InvisibilityData.active = false
         InvisibilityData.originalCF = nil
-        InvisibilityData.groundLevel = nil
         Notify("Invisibilidade", "Desativada.")
     end
 end
 
 -- Limpeza ao trocar de personagem
 LocalPlayer.CharacterAdded:Connect(function()
-    InvisibilityData.originalCF = nil
-    InvisibilityData.groundLevel = nil
+    if InvisibilityData.active then
+        SetInvisibility(false)
+    end
 end)
 -- ==================== FUNÇÕES DE TELEPORTE ====================
 local function Teleport(position)
