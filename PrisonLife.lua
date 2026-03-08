@@ -1173,8 +1173,9 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE FINAL (CORREÇÃO DE TELEPORTE E VOID) ====================
+-- ==================== INVISIBILIDADE COM TWEENSERVICE (TRANSIÇÃO SUAVE) ====================
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = game:GetService("Players").LocalPlayer
 
 local InvisibilityData = {
@@ -1187,6 +1188,9 @@ local InvisibilityData = {
     active = false,
     newY = 0
 }
+
+-- Configuração do Tween
+local TWEEN_INFO = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local function SetInvisibility(enabled)
     local character = LocalPlayer.Character
@@ -1249,9 +1253,9 @@ local function SetInvisibility(enabled)
             end
         end
 
-        -- Remove scripts para evitar bugs
+        -- Mantém o script de animação no clone
         for _, script in ipairs(clone:GetDescendants()) do
-            if script:IsA("Script") or script:IsA("LocalScript") then
+            if (script:IsA("Script") or script:IsA("LocalScript")) and script.Name ~= "Animate" then
                 script:Destroy()
             end
         end
@@ -1259,26 +1263,24 @@ local function SetInvisibility(enabled)
         clone.Parent = workspace
         InvisibilityData.clone = clone
 
-        -- Move o corpo REAL para o subsolo (não muito fundo para evitar o void)
-        InvisibilityData.newY = InvisibilityData.groundLevel - 15
-        hrp.CFrame = CFrame.new(pos.X, InvisibilityData.newY, pos.Z)
-
-        -- Desativa colisão do corpo real
+        -- TWEEN DE ENTRADA: Move o corpo REAL para o subsolo suavemente
+        InvisibilityData.newY = InvisibilityData.groundLevel - 20
+        local targetCF = CFrame.new(pos.X, InvisibilityData.newY, pos.Z)
+        
+        -- Desativa colisão ANTES do tween para não bater no chão
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
             end
         end
-
-        -- Configura o Humanoid do corpo real para ser o "motor"
-        humanoid.PlatformStand = false
-        humanoid.WalkSpeed = 16
-        humanoid.JumpPower = 50
         
-        -- PREVENÇÃO DE MORTE NO VOID: Ancorar o HRP real quando não estiver se movendo
-        -- ou garantir que ele não caia mais do que o necessário.
-        hrp.Anchored = false -- Começa solto para o motor funcionar
+        hrp.Anchored = true -- Ancoramos para o Tween controlar a posição sem interferência da física
+        local entryTween = TweenService:Create(hrp, TWEEN_INFO, {CFrame = targetCF})
+        entryTween:Play()
 
+        -- Configura o Humanoid do corpo real
+        humanoid.PlatformStand = true
+        
         -- Foca a câmera no clone
         workspace.CurrentCamera.CameraSubject = cloneHumanoid
 
@@ -1298,10 +1300,9 @@ local function SetInvisibility(enabled)
             -- 2. Sincroniza o pulo
             cloneHumanoid.Jump = humanoid.Jump
 
-            -- 3. O corpo real segue o clone no subsolo
+            -- 3. O corpo real segue o clone no subsolo (Ancorado, apenas mudando CFrame)
             local clonePos = cloneHRP.Position
-            -- Mantemos o corpo real SEMPRE na mesma altura Y para evitar cair no void
-            hrp.CFrame = CFrame.new(clonePos.X, InvisibilityData.newY, clonePos.Z) * (cloneHRP.CFrame.Rotation)
+            hrp.CFrame = CFrame.new(clonePos.X, InvisibilityData.newY, clonePos.Z)
 
             -- Mantém colisão desativada no real
             for _, part in ipairs(character:GetDescendants()) do
@@ -1315,9 +1316,9 @@ local function SetInvisibility(enabled)
         InvisibilityData.realHRP = hrp
         InvisibilityData.active = true
         
-        Notify("Invisibilidade", "Ativada - Movimento sincronizado e proteção contra void.")
+        Notify("Invisibilidade", "Ativada - Transição suave via TweenService.")
     else
-        -- DESATIVAÇÃO (CORREÇÃO DE TELEPORTE)
+        -- DESATIVAÇÃO COM TWEEN DE SAÍDA
         if InvisibilityData.connection then
             InvisibilityData.connection:Disconnect()
             InvisibilityData.connection = nil
@@ -1327,33 +1328,36 @@ local function SetInvisibility(enabled)
         if InvisibilityData.clone then
             local cloneHRP = InvisibilityData.clone:FindFirstChild("HumanoidRootPart")
             if cloneHRP then
-                -- SALVA A POSIÇÃO ATUAL DO CLONE PARA O TELEPORTE FINAL
+                -- SALVA A POSIÇÃO ATUAL DO CLONE
                 finalCFrame = cloneHRP.CFrame
             end
             InvisibilityData.clone:Destroy()
             InvisibilityData.clone = nil
         end
 
-        if character then
-            character.Archivable = false
-        end
-
-        -- Restaura corpo real NA POSIÇÃO ONDE O CLONE ESTAVA
-        if hrp then
-            if finalCFrame then
-                hrp.CFrame = finalCFrame
-            elseif InvisibilityData.originalCF then
-                hrp.CFrame = InvisibilityData.originalCF
-            end
+        -- TWEEN DE SAÍDA: Traz o personagem real de volta para cima suavemente
+        if hrp and finalCFrame then
+            local exitTween = TweenService:Create(hrp, TWEEN_INFO, {CFrame = finalCFrame})
+            exitTween:Play()
             
-            for _, part in ipairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = true
+            -- Aguarda o tween terminar antes de restaurar a física
+            exitTween.Completed:Connect(function()
+                hrp.Anchored = false
+                humanoid.PlatformStand = false
+                
+                for _, part in ipairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = true
+                    end
                 end
-            end
+                
+                if character then
+                    character.Archivable = false
+                end
+            end)
         end
 
-        -- Restaura Humanoid e Câmera
+        -- Restaura Humanoid e Câmera imediatamente para o jogador não sentir atraso no controle
         if humanoid then
             humanoid.WalkSpeed = 16
             humanoid.JumpPower = 50
@@ -1361,7 +1365,7 @@ local function SetInvisibility(enabled)
         end
 
         InvisibilityData.active = false
-        Notify("Invisibilidade", "Desativada - Você permaneceu na posição atual.")
+        Notify("Invisibilidade", "Desativada - Retorno suave à superfície.")
     end
 end
 
