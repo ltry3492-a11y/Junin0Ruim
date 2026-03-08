@@ -1173,9 +1173,8 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE CORRIGIDA (MOVIMENTO ATUALIZADO) ====================
+-- ==================== INVISIBILIDADE FINAL (CORREÇÃO DE TELEPORTE E VOID) ====================
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = game:GetService("Players").LocalPlayer
 
 local InvisibilityData = {
@@ -1185,7 +1184,8 @@ local InvisibilityData = {
     realHRP = nil,
     clone = nil,
     connection = nil,
-    active = false
+    active = false,
+    newY = 0
 }
 
 local function SetInvisibility(enabled)
@@ -1259,9 +1259,9 @@ local function SetInvisibility(enabled)
         clone.Parent = workspace
         InvisibilityData.clone = clone
 
-        -- Move o corpo REAL para o subsolo
-        local newY = InvisibilityData.groundLevel - 10
-        hrp.CFrame = CFrame.new(pos.X, newY, pos.Z)
+        -- Move o corpo REAL para o subsolo (não muito fundo para evitar o void)
+        InvisibilityData.newY = InvisibilityData.groundLevel - 15
+        hrp.CFrame = CFrame.new(pos.X, InvisibilityData.newY, pos.Z)
 
         -- Desativa colisão do corpo real
         for _, part in ipairs(character:GetDescendants()) do
@@ -1274,6 +1274,10 @@ local function SetInvisibility(enabled)
         humanoid.PlatformStand = false
         humanoid.WalkSpeed = 16
         humanoid.JumpPower = 50
+        
+        -- PREVENÇÃO DE MORTE NO VOID: Ancorar o HRP real quando não estiver se movendo
+        -- ou garantir que ele não caia mais do que o necessário.
+        hrp.Anchored = false -- Começa solto para o motor funcionar
 
         -- Foca a câmera no clone
         workspace.CurrentCamera.CameraSubject = cloneHumanoid
@@ -1294,9 +1298,10 @@ local function SetInvisibility(enabled)
             -- 2. Sincroniza o pulo
             cloneHumanoid.Jump = humanoid.Jump
 
-            -- 3. O corpo real segue o clone no subsolo (para manter o PlayerGui e scripts funcionando)
+            -- 3. O corpo real segue o clone no subsolo
             local clonePos = cloneHRP.Position
-            hrp.CFrame = CFrame.new(clonePos.X, newY, clonePos.Z) * (cloneHRP.CFrame - cloneHRP.Position)
+            -- Mantemos o corpo real SEMPRE na mesma altura Y para evitar cair no void
+            hrp.CFrame = CFrame.new(clonePos.X, InvisibilityData.newY, clonePos.Z) * (cloneHRP.CFrame.Rotation)
 
             -- Mantém colisão desativada no real
             for _, part in ipairs(character:GetDescendants()) do
@@ -1310,15 +1315,21 @@ local function SetInvisibility(enabled)
         InvisibilityData.realHRP = hrp
         InvisibilityData.active = true
         
-        Notify("Invisibilidade", "Ativada - Use as teclas de movimento normalmente.")
+        Notify("Invisibilidade", "Ativada - Movimento sincronizado e proteção contra void.")
     else
-        -- Desativa
+        -- DESATIVAÇÃO (CORREÇÃO DE TELEPORTE)
         if InvisibilityData.connection then
             InvisibilityData.connection:Disconnect()
             InvisibilityData.connection = nil
         end
 
+        local finalCFrame = nil
         if InvisibilityData.clone then
+            local cloneHRP = InvisibilityData.clone:FindFirstChild("HumanoidRootPart")
+            if cloneHRP then
+                -- SALVA A POSIÇÃO ATUAL DO CLONE PARA O TELEPORTE FINAL
+                finalCFrame = cloneHRP.CFrame
+            end
             InvisibilityData.clone:Destroy()
             InvisibilityData.clone = nil
         end
@@ -1327,9 +1338,14 @@ local function SetInvisibility(enabled)
             character.Archivable = false
         end
 
-        -- Restaura corpo real
-        if hrp and InvisibilityData.originalCF then
-            hrp.CFrame = InvisibilityData.originalCF
+        -- Restaura corpo real NA POSIÇÃO ONDE O CLONE ESTAVA
+        if hrp then
+            if finalCFrame then
+                hrp.CFrame = finalCFrame
+            elseif InvisibilityData.originalCF then
+                hrp.CFrame = InvisibilityData.originalCF
+            end
+            
             for _, part in ipairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = true
@@ -1345,7 +1361,7 @@ local function SetInvisibility(enabled)
         end
 
         InvisibilityData.active = false
-        Notify("Invisibilidade", "Desativada.")
+        Notify("Invisibilidade", "Desativada - Você permaneceu na posição atual.")
     end
 end
 
