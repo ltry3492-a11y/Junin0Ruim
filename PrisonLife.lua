@@ -391,7 +391,7 @@ local function CreateModernUI()
         contentListLayout.Padding = UDim.new(0, 5)
         contentListLayout.Parent = tabContent
 
-        tabButton.MouseButton1Click:Connect(function()
+        local function SelectThisTab()
             for _, btn in pairs(UIComponents.TabButtons) do
                 btn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
             end
@@ -401,7 +401,9 @@ local function CreateModernUI()
             tabButton.BackgroundColor3 = Color3.fromRGB(70, 70, 90)
             tabContent.Visible = true
             UISettings.CurrentTab = name
-        end)
+        end
+        tabButton.MouseButton1Click:Connect(SelectThisTab)
+        UIComponents.TabButtons[name].Select = SelectThisTab -- Armazenar a função para chamada programática
     end
 
     CreateTab("Main")
@@ -411,10 +413,10 @@ local function CreateModernUI()
     CreateTab("Settings")
 
     -- Selecionar a aba inicial
-    if UIComponents.TabButtons[UISettings.CurrentTab] then
-        UIComponents.TabButtons[UISettings.CurrentTab].MouseButton1Click:Fire()
+    if UIComponents.TabButtons[UISettings.CurrentTab] and UIComponents.TabButtons[UISettings.CurrentTab].Select then
+        UIComponents.TabButtons[UISettings.CurrentTab].Select()
     else
-        UIComponents.TabButtons["Main"].MouseButton1Click:Fire()
+        UIComponents.TabButtons["Main"].Select()
     end
 
     sg.Parent = CoreGui -- Anexar ao CoreGui para persistência
