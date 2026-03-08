@@ -45,7 +45,7 @@ local UISettings = {
     CurrentTab = "Main"
 }
 
--- ==================== FUNÇÃO DE TOGGLE DA UI (CORRIGIDA) ====================
+-- ==================== FUNÇÃO DE TOGGLE DA UI ====================
 local UIComponents = { MainFrame = nil, TabButtons = {}, TabContents = {}, CloseButton = nil, ScreenGui = nil }
 
 local function ToggleUI()
@@ -56,7 +56,6 @@ local function ToggleUI()
     if IsMobile and UIComponents and UIComponents.ScreenGui and UIComponents.ScreenGui:FindFirstChild("ToggleUIButton") then
         UIComponents.ScreenGui.ToggleUIButton.Visible = not UISettings.Visible
     end
-    -- Garantir que o botão de toggle esteja visível se a UI principal estiver oculta no mobile
     if IsMobile and not UISettings.Visible and UIComponents and UIComponents.ScreenGui and UIComponents.ScreenGui:FindFirstChild("ToggleUIButton") then
         UIComponents.ScreenGui.ToggleUIButton.Visible = true
     end
@@ -876,7 +875,7 @@ local function SwitchTab(tabName)
     end
 end
 
--- ==================== FUNÇÕES DE ESP (ORIGINAL) ====================
+-- ==================== FUNÇÕES DE ESP ====================
 local function ClearESPForPlayer(plr)
     local data = ESPHighlights[plr]
     if not data then return end
@@ -1129,7 +1128,7 @@ local function hookCharacterWeaponMods(char)
     scanFastReload(char)
 end
 
--- ==================== NOCLIP CORRIGIDO (ATRAVESSA PAREDES) ====================
+-- ==================== NOCLIP CORRIGIDO ====================
 local NoClipConnection = nil
 
 local function SetNoClip(enabled)
@@ -1143,10 +1142,8 @@ local function SetNoClip(enabled)
             NoClipConnection:Disconnect()
         end
 
-        -- Muda para estado Flying para evitar gravidade
         humanoid:ChangeState(Enum.HumanoidStateType.Flying)
 
-        -- Loop de manutenção: desativa colisão e ancora partes para evitar interações físicas
         NoClipConnection = RunService.Stepped:Connect(function()
             if not Settings.NoClipEnabled or not LocalPlayer.Character then
                 if NoClipConnection and NoClipConnection.Connected then
@@ -1155,13 +1152,11 @@ local function SetNoClip(enabled)
                 return
             end
             local char = LocalPlayer.Character
-            -- Desativa colisão de TODAS as partes do personagem
             for _, part in ipairs(char:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
                 end
             end
-            -- Garante que continue voando
             local hum = char:FindFirstChildOfClass("Humanoid")
             if hum and hum:GetState() ~= Enum.HumanoidStateType.Flying then
                 hum:ChangeState(Enum.HumanoidStateType.Flying)
@@ -1173,7 +1168,6 @@ local function SetNoClip(enabled)
         if NoClipConnection and NoClipConnection.Connected then
             NoClipConnection:Disconnect()
         end
-        -- Restaura estado normal
         humanoid:ChangeState(Enum.HumanoidStateType.Running)
         Notify("NoClip", "Desativado.")
     end
@@ -1185,6 +1179,7 @@ local InvisibilityData = {
     groundLevel = nil,
     clone = nil,
     connection = nil,
+    cloneSync = nil,
     active = false
 }
 
@@ -1237,8 +1232,8 @@ local function SetInvisibility(enabled)
 
         -- Configura o Humanoid para poder se mover (mas sem cair)
         humanoid:ChangeState(Enum.HumanoidStateType.Flying)
-        humanoid.PlatformStand = false  -- permite movimento
-        humanoid.WalkSpeed = 16         -- velocidade normal
+        humanoid.PlatformStand = false
+        humanoid.WalkSpeed = 16
         humanoid.JumpPower = 50
 
         -- Cria clone fantasma na superfície (na posição original)
@@ -1272,12 +1267,11 @@ local function SetInvisibility(enabled)
 
         -- Sincroniza posição do clone com o corpo real (mantém X/Z, Y fixo na superfície)
         local surfaceY = InvisibilityData.originalCF.Position.Y
-        local cloneSync = RunService.RenderStepped:Connect(function()
+        InvisibilityData.cloneSync = RunService.RenderStepped:Connect(function()
             if not Settings.InvisibilityEnabled or not clone or not hrp then return end
             local realPos = hrp.Position
             clone:SetPrimaryPartCFrame(CFrame.new(realPos.X, surfaceY, realPos.Z))
         end)
-        table.insert(InvisibilityData, cloneSync) -- para desconectar depois
 
         InvisibilityData.active = true
         Notify("Invisibilidade", "Ativada – corpo no subsolo, clone fantasma na superfície.")
@@ -1357,7 +1351,6 @@ local function SaveCurrentPosition()
 end
 
 local function HasGamepass(weaponName)
-    -- Substitua pela lógica real de verificação de gamepass
     return true
 end
 
@@ -1382,23 +1375,13 @@ local function ReturnToSavedPosition()
     end
 end
 
-local function TeleportToCriminalBase()
-    Teleport(Vector3.new(-959.8, 94.1, 2071.3))
-end
-
-local function TeleportToPrison()
-    Teleport(Vector3.new(726.4, 122.0, 2586.0))
-end
-
--- ==================== SISTEMA DE PORTAL CORRIGIDO ====================
+-- ==================== SISTEMA DE PORTAL ====================
 local PortalParts = {}
 local PortalCooldown = {}
 local PLAYER_PORTAL_COOLDOWN = 2
 local lastPlayerPortalTime = 0
 
 local function CreatePortal()
-
-    -- Remove antigos
     for _, part in ipairs(PortalParts) do
         if part and part.Parent then
             part:Destroy()
@@ -1408,15 +1391,10 @@ local function CreatePortal()
     PortalParts = {}
     PortalCooldown = {}
 
-    -- POSIÇÕES
     local posPrisao = Vector3.new(997.28, 100.39, 2329.03)
     local posBase = Vector3.new(-966.4554, 94.1289, 2080.625)
 
-    --------------------------------------------------------------------
-    -- FUNÇÃO PORTAL
-    --------------------------------------------------------------------
     local function createPortalPart(position, targetPosition, color, name, rotationY)
-
         local part = Instance.new("Part")
         part.Name = "Portal_" .. name
         part.Size = Vector3.new(5,10,1)
@@ -1427,20 +1405,13 @@ local function CreatePortal()
         part.Material = Enum.Material.Neon
         part.Parent = workspace
 
-        -- ✅ Rotação individual
         local rotation = CFrame.Angles(0, math.rad(rotationY), 0)
         local offset = CFrame.new(0,0,-0.6)
-
         part.CFrame = CFrame.new(position) * rotation * offset
 
-        -- Highlight
         local highlight = Instance.new("Highlight")
         highlight.Adornee = part
-        highlight.FillColor =
-            color == "Bright blue"
-            and Color3.fromRGB(0,100,255)
-            or Color3.fromRGB(255,0,0)
-
+        highlight.FillColor = (color == "Bright blue") and Color3.fromRGB(0,100,255) or Color3.fromRGB(255,0,0)
         highlight.FillTransparency = 0.2
         highlight.OutlineTransparency = 1
         highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -1450,12 +1421,9 @@ local function CreatePortal()
 
         part.Touched:Connect(function(hit)
             if not hit.Parent then return end
-
             local player = Players:GetPlayerFromCharacter(hit.Parent)
             if player == LocalPlayer then
-
                 local now = tick()
-
                 if now - lastPlayerPortalTime < PLAYER_PORTAL_COOLDOWN then return end
                 if now - (PortalCooldown[part] or 0) < 3 then return end
 
@@ -1466,14 +1434,7 @@ local function CreatePortal()
 
                 if part and part.Parent then
                     Teleport(targetPosition)
-
-                    Notify(
-                        "Portal",
-                        "Teleportado para " ..
-                        (name == "Prisao"
-                        and "Base dos Criminosos"
-                        or "Prisão")
-                    )
+                    Notify("Portal", "Teleportado para " .. (name == "Prisao" and "Base dos Criminosos" or "Prisão"))
                 end
             end
         end)
@@ -1481,30 +1442,10 @@ local function CreatePortal()
         return part
     end
 
-    --------------------------------------------------------------------
-    -- ✅ CADA PORTAL COM SUA DIREÇÃO
-    --------------------------------------------------------------------
-
-    local partPrisao =
-        createPortalPart(
-            posPrisao,
-            posBase,
-            "Bright blue",
-            "Prisao",
-            90 -- rotação da prisão
-        )
-
-    local partBase =
-        createPortalPart(
-            posBase,
-            posPrisao,
-            "Bright red",
-            "Base",
-            180 -- rotação da base criminosa
-        )
+    local partPrisao = createPortalPart(posPrisao, posBase, "Bright blue", "Prisao", 90)
+    local partBase = createPortalPart(posBase, posPrisao, "Bright red", "Base", 180)
 
     PortalParts = {partPrisao, partBase}
-
     Notify("Portal criado", "Use os portais para teleportar.")
 end
 
@@ -1944,7 +1885,19 @@ local function UpdateAmmoGUI(ammo, maxAmmo)
     end)
 end
 
--- ==================== DISPARO SILENCIOSO ====================
+-- ==================== OBTÉM O REMOTE DA ARMA ====================
+local function GetShootRemote(tool)
+    -- Procura por um RemoteEvent ou RemoteFunction dentro da ferramenta
+    return tool:FindFirstChild("ShootEvent") or tool:FindFirstChild("Shoot") or tool:FindFirstChild("Remote") or tool:FindFirstChildOfClass("RemoteEvent") or tool:FindFirstChildOfClass("RemoteFunction")
+end
+
+-- ==================== DISPARO SILENCIOSO CORRIGIDO ====================
+local GunRemotes = ReplicatedStorage:FindFirstChild("GunRemotes")
+local ShootEvent = GunRemotes and GunRemotes:FindFirstChild("ShootEvent")
+if not ShootEvent then
+    warn("ShootEvent global não encontrado. Usando remote da arma.")
+end
+
 local function FireSilentAim(gun)
     local ammo = gun:GetAttribute("Local_CurrentAmmo") or 0
     if ammo <= 0 then return false end
@@ -2009,7 +1962,22 @@ local function FireSilentAim(gun)
         CreateProjectileTracer(visualStart, hitPos + Vector3.new(ox, oy, oz), gun)
     end
 
-    ShootEvent:FireServer(bullets)
+    -- Tenta usar o remote da própria arma primeiro
+    local remote = GetShootRemote(gun)
+    if not remote then
+        remote = ShootEvent -- fallback global
+    end
+
+    if remote then
+        if remote:IsA("RemoteFunction") then
+            remote:InvokeServer(bullets)
+        else
+            remote:FireServer(bullets)
+        end
+    else
+        warn("Nenhum remote de tiro encontrado para a arma.")
+        return false
+    end
 
     local newAmmo = ammo - 1
     gun:SetAttribute("Local_CurrentAmmo", newAmmo)
@@ -2045,7 +2013,6 @@ local function HandleAction(actionName, inputState, inputObject)
 end
 
 pcall(function()
-    -- No mobile, também capturamos toques
     if IsMobile then
         ContextActionService:BindActionAtPriority("SilentAimShoot", HandleAction, false, 3000, Enum.UserInputType.Touch)
     else
