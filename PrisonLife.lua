@@ -34,7 +34,7 @@ local Settings = {
     RapidFireEnabled = false,
     FastReloadEnabled = false,
     NoClipEnabled = false,
-    InvisibilityEnabled = false,   -- ADICIONADO
+    InvisibilityEnabled = false,
 }
 
 local IsMobile = UserInputService.TouchEnabled or UserInputService.GamepadEnabled
@@ -44,6 +44,17 @@ local UISettings = {
     ToggleUIKey = Enum.KeyCode.Insert,
     CurrentTab = "Main"
 }
+
+-- ==================== FUNÇÃO AUXILIAR DE NOTIFICAÇÃO ====================
+local function Notify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 3,
+        })
+    end)
+end
 
 -- ==================== FUNÇÃO DE TOGGLE DA UI ====================
 local UIComponents = { MainFrame = nil, TabButtons = {}, TabContents = {}, CloseButton = nil, ScreenGui = nil }
