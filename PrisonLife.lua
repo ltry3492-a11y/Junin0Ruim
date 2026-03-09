@@ -1200,25 +1200,31 @@ local TWEEN_INFO = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirectio
 
 local function SetInvisibility(enabled)
     local character = LocalPlayer.Character
-    if not character then return end
+    if not character then 
+        Notify("Invisibilidade", "Personagem não encontrado")
+        return 
+    end
     
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     local hrp = character:FindFirstChild("HumanoidRootPart")
     
-    if not humanoid or not hrp then return end
+    if not humanoid or not hrp then 
+        Notify("Invisibilidade", "Humanoid ou HRP não encontrado")
+        return 
+    end
 
     if enabled then
-        if InvisibilityData.active then return end
+        if InvisibilityData.active then 
+            Notify("Invisibilidade", "Já ativada")
+            return 
+        end
 
         local pos = hrp.Position
         InvisibilityData.originalCF = hrp.CFrame
 
-        -- Raycast para o chão
-        local raycastParams = RaycastParams.new()
-        raycastParams.FilterDescendantsInstances = {character}
-        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-        local ray = workspace:Raycast(pos, Vector3.new(0, -500, 0), raycastParams)
-        InvisibilityData.groundLevel = ray and ray.Position.Y or (pos.Y - 50)
+        -- Posição fixa abaixo do mapa para garantir invisibilidade
+        local UNDERGROUND_Y = -500
+        InvisibilityData.newY = UNDERGROUND_Y
 
         -- Clone
         character.Archivable = true
@@ -1231,6 +1237,7 @@ local function SetInvisibility(enabled)
         
         if not cloneHRP or not cloneHumanoid then
             if clone then clone:Destroy() end
+            Notify("Invisibilidade", "Falha ao clonar")
             return
         end
         
@@ -1238,9 +1245,10 @@ local function SetInvisibility(enabled)
         cloneHRP.Anchored = false
         cloneHRP.CanCollide = true
 
+        -- Tornar o clone visível (transparência 0)
         for _, part in ipairs(clone:GetDescendants()) do
             if part:IsA("BasePart") then
-                part.Transparency = 0.3
+                part.Transparency = 0
                 part.CanCollide = true
             end
         end
@@ -1255,17 +1263,17 @@ local function SetInvisibility(enabled)
         clone.Parent = workspace
         InvisibilityData.clone = clone
 
-        -- Movimento Inicial (Tween Suave)
-        InvisibilityData.newY = InvisibilityData.groundLevel - 25
-        local targetCF = CFrame.new(pos.X, InvisibilityData.newY, pos.Z)
-        
+        -- Desabilitar colisão do personagem real e torná-lo invisível
         for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then part.CanCollide = false end
+            if part:IsA("BasePart") then 
+                part.CanCollide = false
+                part.Transparency = 1
+            end
         end
         
+        -- Mover o personagem real para baixo instantaneamente
         hrp.Anchored = true
-        local entryTween = TweenService:Create(hrp, TWEEN_INFO, {CFrame = targetCF})
-        entryTween:Play()
+        hrp.CFrame = CFrame.new(pos.X, UNDERGROUND_Y, pos.Z)
 
         humanoid.PlatformStand = true
         workspace.CurrentCamera.CameraSubject = cloneHumanoid
@@ -1273,27 +1281,41 @@ local function SetInvisibility(enabled)
         -- SINCRONIZAÇÃO EM TEMPO REAL
         InvisibilityData.connection = RunService.RenderStepped:Connect(function()
             if not InvisibilityData.active or not clone or not hrp then 
-                if InvisibilityData.connection then InvisibilityData.connection:Disconnect() end
                 return 
             end
 
-            if not clone.Parent then return end
+            -- Verificar se o clone ainda existe
+            if not clone.Parent then 
+                return 
+            end
+
+            -- Re-obter referências do clone (podem ter mudado se o clone morreu)
+            local currentCloneHRP = clone:FindFirstChild("HumanoidRootPart")
+            local currentCloneHumanoid = clone:FindFirstChildOfClass("Humanoid")
+            if not currentCloneHRP or not currentCloneHumanoid then
+                return
+            end
 
             local moveDirection = humanoid.MoveDirection
-            cloneHumanoid:Move(moveDirection, false)
-            cloneHumanoid.Jump = humanoid.Jump
+            currentCloneHumanoid:Move(moveDirection, false)
+            currentCloneHumanoid.Jump = humanoid.Jump
 
-            local clonePos = cloneHRP.Position
-            hrp.CFrame = CFrame.new(clonePos.X, InvisibilityData.newY, clonePos.Z) * cloneHRP.CFrame.Rotation
+            local clonePos = currentCloneHRP.Position
+            hrp.CFrame = CFrame.new(clonePos.X, UNDERGROUND_Y, clonePos.Z) * currentCloneHRP.CFrame.Rotation
 
+            -- Garantir que o personagem real continue invisível e sem colisão
             for _, part in ipairs(character:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
+                if part:IsA("BasePart") then 
+                    part.CanCollide = false
+                    part.Transparency = 1
+                end
             end
         end)
 
         InvisibilityData.active = true
-        Notify("Invisibilidade", "Ativada - Tempo Real")
+        Notify("Invisibilidade", "Ativada")
     else
+        -- Desativação
         if InvisibilityData.connection then
             InvisibilityData.connection:Disconnect()
             InvisibilityData.connection = nil
@@ -1302,26 +1324,37 @@ local function SetInvisibility(enabled)
         local finalCFrame = nil
         if InvisibilityData.clone then
             local cloneHRP = InvisibilityData.clone:FindFirstChild("HumanoidRootPart")
-            if cloneHRP then finalCFrame = cloneHRP.CFrame end
+            if cloneHRP then 
+                finalCFrame = cloneHRP.CFrame 
+            end
             InvisibilityData.clone:Destroy()
             InvisibilityData.clone = nil
         end
 
         if hrp and finalCFrame then
-            local exitTween = TweenService:Create(hrp, TWEEN_INFO, {CFrame = finalCFrame})
-            exitTween:Play()
-            exitTween.Completed:Connect(function()
-                hrp.Anchored = false
-                humanoid.PlatformStand = false
-                for _, part in ipairs(character:GetDescendants()) do
-                    if part:IsA("BasePart") then part.CanCollide = true end
+            hrp.CFrame = finalCFrame -- Volta instantaneamente
+            hrp.Anchored = false
+            humanoid.PlatformStand = false
+            -- Restaurar colisão e transparência
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then 
+                    part.CanCollide = true
+                    part.Transparency = 0
                 end
-            end)
+            end
+        else
+            -- Se não tiver clone, apenas restaura
+            hrp.Anchored = false
+            humanoid.PlatformStand = false
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then 
+                    part.CanCollide = true
+                    part.Transparency = 0
+                end
+            end
         end
 
         if humanoid then
-            humanoid.WalkSpeed = 16
-            humanoid.JumpPower = 50
             workspace.CurrentCamera.CameraSubject = humanoid
         end
 
@@ -1329,8 +1362,6 @@ local function SetInvisibility(enabled)
         Notify("Invisibilidade", "Desativada")
     end
 end
-
-_G.SetInvisibility = SetInvisibility
 
 -- ==================== FUNÇÕES DE TELEPORTE ====================
 local function Teleport(position)
