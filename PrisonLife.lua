@@ -1197,7 +1197,6 @@ local InvisibilityData = {
     active = false,
     bodyDepth = 6,
     cloneTransparency = 0.35,
-    lieRotation = CFrame.Angles(math.rad(90), 0, 0),
     rootMotor = nil,
     rootMotorWasEnabled = true,
     bodyRoot = nil,
@@ -1307,6 +1306,21 @@ local function BuildCloneSyncPairs(character, clone)
     end
 end
 
+local function MoveDetachedBodyToOffset()
+    local hrp = InvisibilityData.realHRP
+    local bodyRoot = InvisibilityData.bodyRoot
+    local offset = InvisibilityData.bodyRootOffset
+    if not hrp or not hrp.Parent or not bodyRoot or not bodyRoot.Parent or not offset then
+        return
+    end
+
+    local rotation = hrp.CFrame - hrp.CFrame.Position
+    local bodyRootTarget = (CFrame.new(hrp.Position + Vector3.new(0, -InvisibilityData.bodyDepth, 0)) * rotation) * offset
+    bodyRoot.CFrame = bodyRootTarget
+    bodyRoot.AssemblyLinearVelocity = Vector3.zero
+    bodyRoot.AssemblyAngularVelocity = Vector3.zero
+end
+
 local function MoveCloneToMirror()
     local hrp = InvisibilityData.realHRP
     local clone = InvisibilityData.clone
@@ -1314,25 +1328,18 @@ local function MoveCloneToMirror()
         return
     end
 
-    local rotation = hrp.CFrame - hrp.CFrame.Position
-    local cloneHRPTarget = CFrame.new(hrp.Position) * rotation * InvisibilityData.lieRotation
+    local cloneHRPTarget = hrp.CFrame
     clone:PivotTo(cloneHRPTarget * InvisibilityData.clonePivotFromHRP)
     InvisibilityData.lastCloneCFrame = cloneHRPTarget
 end
 
 local function SyncCloneFromRealBody()
-    local hrp = InvisibilityData.realHRP
-    if not hrp or not hrp.Parent then
-        return
-    end
-
-    local cloneBase = CFrame.new(hrp.Position) * (hrp.CFrame - hrp.CFrame.Position) * InvisibilityData.lieRotation
+    local lift = Vector3.new(0, InvisibilityData.bodyDepth, 0)
     for _, pair in ipairs(InvisibilityData.cloneSyncPairs) do
         local source = pair.source
         local target = pair.target
         if source and source.Parent and target and target.Parent then
-            local rel = hrp.CFrame:ToObjectSpace(source.CFrame)
-            target.CFrame = cloneBase * rel
+            target.CFrame = source.CFrame + lift
         end
     end
 end
@@ -1402,6 +1409,12 @@ local function SetInvisibility(enabled)
         local hrp = character:FindFirstChild("HumanoidRootPart")
         if not humanoid or not hrp then return end
 
+        local rootMotor = FindRootMotor(character, hrp)
+        if not rootMotor then
+            Notify("Invisibility", "Motor6D raiz não encontrado no personagem.")
+            return
+        end
+
         character.Archivable = true
         local clone = character:Clone()
         character.Archivable = false
@@ -1434,21 +1447,23 @@ local function SetInvisibility(enabled)
         InvisibilityData.cloneHumanoid = cloneHumanoid
         InvisibilityData.cloneHRP = cloneHRP
         InvisibilityData.clonePivotFromHRP = cloneHRP.CFrame:ToObjectSpace(clone:GetPivot())
-        InvisibilityData.rootMotor = nil
-        InvisibilityData.rootMotorWasEnabled = true
+        InvisibilityData.rootMotor = rootMotor
+        InvisibilityData.rootMotorWasEnabled = rootMotor.Enabled
         InvisibilityData.realHRP = hrp
         InvisibilityData.realHRPOriginalCanCollide = hrp.CanCollide
         InvisibilityData.realHumanoid = humanoid
-        InvisibilityData.bodyRoot = nil
-        InvisibilityData.bodyRootOffset = nil
+        InvisibilityData.bodyRoot = (rootMotor.Part0 == hrp) and rootMotor.Part1 or rootMotor.Part0
+        InvisibilityData.bodyRootOffset = InvisibilityData.bodyRoot and hrp.CFrame:ToObjectSpace(InvisibilityData.bodyRoot.CFrame) or CFrame.new()
         InvisibilityData.cloneSyncPairs = {}
         InvisibilityData.realHidden = false
 
+        rootMotor.Enabled = false
         hrp.CanCollide = InvisibilityData.realHRPOriginalCanCollide
 
         HideRealCharacter(character)
         BuildCloneSyncPairs(character, clone)
 
+        MoveDetachedBodyToOffset()
         MoveCloneToMirror()
         SyncCloneFromRealBody()
         local camera = workspace.CurrentCamera
@@ -1472,6 +1487,7 @@ local function SetInvisibility(enabled)
                 return
             end
 
+            MoveDetachedBodyToOffset()
             MoveCloneToMirror()
             SyncCloneFromRealBody()
             HideRealCharacter(character)
