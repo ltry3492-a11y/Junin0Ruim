@@ -1,5 +1,4 @@
 local TweenService = game:GetService("TweenService")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -1189,41 +1188,41 @@ end
 
 local InvisibilityData = {
     clone = nil,
+    cloneHumanoid = nil,
+    cloneHRP = nil,
+    clonePivotFromHRP = CFrame.new(),
+    lastCloneCFrame = nil,
     connection = nil,
     active = false,
-    undergroundOffset = 220,
+    bodyDepth = 6,
+    cloneHeight = 6,
     cloneTransparency = 0.35,
     rootMotor = nil,
     rootMotorWasEnabled = true,
     bodyRoot = nil,
     bodyRootOffset = nil,
     realHRP = nil,
-    originalPartState = {},
-    cloneSyncPairs = {}
+    realHumanoid = nil,
+    originalPartState = {}
 }
 
-local function GetRelativePath(root, obj)
-    local path = {}
-    local current = obj
-    while current and current ~= root do
-        table.insert(path, 1, current.Name)
-        current = current.Parent
-    end
-    if current ~= root then
-        return nil
-    end
-    return path
-end
+local GroundCheckParams = RaycastParams.new()
+GroundCheckParams.FilterType = Enum.RaycastFilterType.Exclude
+GroundCheckParams.IgnoreWater = true
+GroundCheckParams.RespectCanCollide = true
 
-local function FindByRelativePath(root, path)
-    local current = root
-    for _, segment in ipairs(path) do
-        current = current:FindFirstChild(segment)
-        if not current then
-            return nil
-        end
+local function GetGroundY(worldPos, ignoreA, ignoreB)
+    local filter = {}
+    if ignoreA then table.insert(filter, ignoreA) end
+    if ignoreB then table.insert(filter, ignoreB) end
+    GroundCheckParams.FilterDescendantsInstances = filter
+
+    local origin = worldPos + Vector3.new(0, 8, 0)
+    local result = workspace:Raycast(origin, Vector3.new(0, -800, 0), GroundCheckParams)
+    if result then
+        return result.Position.Y
     end
-    return current
+    return worldPos.Y - 3
 end
 
 local function FindRootMotor(character, hrp)
@@ -1277,50 +1276,44 @@ local function RestoreRealCharacter()
     InvisibilityData.originalPartState = {}
 end
 
-local function BuildCloneSyncPairs(character, clone)
-    InvisibilityData.cloneSyncPairs = {}
-
-    for _, source in ipairs(character:GetDescendants()) do
-        if source:IsA("BasePart") then
-            local path = GetRelativePath(character, source)
-            if path then
-                local target = FindByRelativePath(clone, path)
-                if target and target:IsA("BasePart") then
-                    table.insert(InvisibilityData.cloneSyncPairs, {source = source, target = target})
-                end
-            end
-        end
+local function MoveDetachedBodyToGroundOffset(groundY)
+    local hrp = InvisibilityData.realHRP
+    local bodyRoot = InvisibilityData.bodyRoot
+    local offset = InvisibilityData.bodyRootOffset
+    if not hrp or not hrp.Parent or not bodyRoot or not bodyRoot.Parent or not offset then
+        return
     end
+
+    local rotation = hrp.CFrame - hrp.CFrame.Position
+    local bodyRootTarget = (CFrame.new(hrp.Position.X, groundY - InvisibilityData.bodyDepth, hrp.Position.Z) * rotation) * offset
+    bodyRoot.CFrame = bodyRootTarget
+    bodyRoot.AssemblyLinearVelocity = Vector3.zero
+    bodyRoot.AssemblyAngularVelocity = Vector3.zero
 end
 
-local function SyncClonePose()
-    local offset = Vector3.new(0, InvisibilityData.undergroundOffset, 0)
-    local realHRP = InvisibilityData.realHRP
-
-    for _, pair in ipairs(InvisibilityData.cloneSyncPairs) do
-        local source = pair.source
-        local target = pair.target
-        if source and source.Parent and target and target.Parent then
-            if source.Name == "HumanoidRootPart" then
-                target.CFrame = source.CFrame
-            else
-                local targetCF = source.CFrame
-                if realHRP and realHRP.Parent then
-                    local relativeY = source.Position.Y - realHRP.Position.Y
-                    if relativeY < -40 then
-                        targetCF = targetCF + offset
-                    end
-                end
-                target.CFrame = targetCF
-            end
-        end
+local function MoveCloneToGroundOffset(groundY)
+    local hrp = InvisibilityData.realHRP
+    local clone = InvisibilityData.clone
+    if not hrp or not hrp.Parent or not clone or not clone.Parent then
+        return
     end
+
+    local rotation = hrp.CFrame - hrp.CFrame.Position
+    local cloneHRPTarget = CFrame.new(hrp.Position.X, groundY + InvisibilityData.cloneHeight, hrp.Position.Z) * rotation
+    clone:PivotTo(cloneHRPTarget * InvisibilityData.clonePivotFromHRP)
+    InvisibilityData.lastCloneCFrame = cloneHRPTarget
 end
 
-local function CleanupInvisibilityState()
+local function CleanupInvisibilityState(restoreCamera)
     if InvisibilityData.connection then
         InvisibilityData.connection:Disconnect()
         InvisibilityData.connection = nil
+    end
+
+    if InvisibilityData.realHRP and InvisibilityData.realHRP.Parent and InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.Parent and InvisibilityData.bodyRootOffset then
+        InvisibilityData.bodyRoot.CFrame = InvisibilityData.realHRP.CFrame * InvisibilityData.bodyRootOffset
+        InvisibilityData.bodyRoot.AssemblyLinearVelocity = Vector3.zero
+        InvisibilityData.bodyRoot.AssemblyAngularVelocity = Vector3.zero
     end
 
     if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent then
@@ -1339,8 +1332,21 @@ local function CleanupInvisibilityState()
     InvisibilityData.bodyRoot = nil
     InvisibilityData.bodyRootOffset = nil
     InvisibilityData.realHRP = nil
-    InvisibilityData.cloneSyncPairs = {}
+    InvisibilityData.realHumanoid = nil
+    InvisibilityData.cloneHumanoid = nil
+    InvisibilityData.cloneHRP = nil
+    InvisibilityData.clonePivotFromHRP = CFrame.new()
+    InvisibilityData.lastCloneCFrame = nil
     InvisibilityData.active = false
+
+    if restoreCamera ~= false then
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local camera = workspace.CurrentCamera
+        if hum and camera then
+            camera.CameraSubject = hum
+        end
+    end
 end
 
 local function SetInvisibility(enabled)
@@ -1383,10 +1389,21 @@ local function SetInvisibility(enabled)
 
         clone.Parent = workspace
 
+        local cloneHumanoid = clone:FindFirstChildOfClass("Humanoid")
+        local cloneHRP = clone:FindFirstChild("HumanoidRootPart")
+        if not cloneHumanoid or not cloneHRP then
+            clone:Destroy()
+            return
+        end
+
         InvisibilityData.clone = clone
+        InvisibilityData.cloneHumanoid = cloneHumanoid
+        InvisibilityData.cloneHRP = cloneHRP
+        InvisibilityData.clonePivotFromHRP = cloneHRP.CFrame:ToObjectSpace(clone:GetPivot())
         InvisibilityData.rootMotor = rootMotor
         InvisibilityData.rootMotorWasEnabled = rootMotor.Enabled
         InvisibilityData.realHRP = hrp
+        InvisibilityData.realHumanoid = humanoid
         InvisibilityData.bodyRoot = (rootMotor.Part0 == hrp) and rootMotor.Part1 or rootMotor.Part0
         InvisibilityData.bodyRootOffset = InvisibilityData.bodyRoot and hrp.CFrame:ToObjectSpace(InvisibilityData.bodyRoot.CFrame) or CFrame.new()
 
@@ -1394,15 +1411,13 @@ local function SetInvisibility(enabled)
 
         HideRealCharacter(character)
 
-        if InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.Parent then
-            local sinkCFrame = hrp.CFrame * CFrame.new(0, -InvisibilityData.undergroundOffset, 0) * InvisibilityData.bodyRootOffset
-            InvisibilityData.bodyRoot.CFrame = sinkCFrame
-            InvisibilityData.bodyRoot.AssemblyLinearVelocity = Vector3.zero
-            InvisibilityData.bodyRoot.AssemblyAngularVelocity = Vector3.zero
+        local groundY = GetGroundY(hrp.Position, character, clone)
+        MoveDetachedBodyToGroundOffset(groundY)
+        MoveCloneToGroundOffset(groundY)
+        local camera = workspace.CurrentCamera
+        if camera then
+            camera.CameraSubject = cloneHumanoid
         end
-
-        BuildCloneSyncPairs(character, clone)
-        SyncClonePose()
 
         InvisibilityData.active = true
         InvisibilityData.connection = RunService.RenderStepped:Connect(function()
@@ -1420,17 +1435,26 @@ local function SetInvisibility(enabled)
                 return
             end
 
-            if InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.Parent and InvisibilityData.realHRP and InvisibilityData.realHRP.Parent then
-                local sinkCFrame = InvisibilityData.realHRP.CFrame * CFrame.new(0, -InvisibilityData.undergroundOffset, 0) * InvisibilityData.bodyRootOffset
-                InvisibilityData.bodyRoot.CFrame = sinkCFrame
-                InvisibilityData.bodyRoot.AssemblyLinearVelocity = Vector3.zero
-                InvisibilityData.bodyRoot.AssemblyAngularVelocity = Vector3.zero
+            local currentGroundY = GetGroundY(InvisibilityData.realHRP.Position, character, InvisibilityData.clone)
+            MoveDetachedBodyToGroundOffset(currentGroundY)
+            MoveCloneToGroundOffset(currentGroundY)
+            HideRealCharacter(character)
+            local camera = workspace.CurrentCamera
+            if camera and InvisibilityData.cloneHumanoid and camera.CameraSubject ~= InvisibilityData.cloneHumanoid then
+                camera.CameraSubject = InvisibilityData.cloneHumanoid
             end
-
-            SyncClonePose()
         end)
     else
-        CleanupInvisibilityState()
+        if InvisibilityData.active and InvisibilityData.realHRP and InvisibilityData.realHRP.Parent then
+            local returnCFrame = InvisibilityData.lastCloneCFrame
+            if not returnCFrame and InvisibilityData.cloneHRP and InvisibilityData.cloneHRP.Parent then
+                returnCFrame = InvisibilityData.cloneHRP.CFrame
+            end
+            if returnCFrame then
+                InvisibilityData.realHRP.CFrame = returnCFrame
+            end
+        end
+        CleanupInvisibilityState(true)
     end
 end
 
