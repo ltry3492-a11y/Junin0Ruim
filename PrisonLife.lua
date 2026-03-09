@@ -1173,14 +1173,15 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE CORRIGIDA (FUNCIONAL 100%) ====================
+-- ==================== INVISIBILIDADE 100% CLIENT (CORPO REAL NO SUBSOLO) ====================
 local InvisibilityData = {
-    originalCF = nil,
     clone = nil,
     connection = nil,
     active = false,
-    undergroundY = -500  -- Profundidade fixa
+    undergroundY = -500
 }
+
+local TWEEN_INFO = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local function SetInvisibility(enabled)
     local character = LocalPlayer.Character
@@ -1198,16 +1199,17 @@ local function SetInvisibility(enabled)
     end
 
     if enabled then
+        -- ATIVAR
         if InvisibilityData.active then
             Notify("Invisibilidade", "Já ativada")
             return
         end
 
-        -- 1. Salva posição original
+        -- Salva posição original
         local originalPos = hrp.Position
-        InvisibilityData.originalCF = hrp.CFrame
+        local originalCF = hrp.CFrame
 
-        -- 2. Cria o clone
+        -- CRIA O CLONE
         character.Archivable = true
         local clone = character:Clone()
         character.Archivable = false
@@ -1223,21 +1225,20 @@ local function SetInvisibility(enabled)
             return
         end
 
-        -- Posiciona o clone EXATAMENTE onde o personagem está
-        cloneHRP.CFrame = CFrame.new(originalPos)
+        -- Posiciona o clone EXATAMENTE onde o personagem REAL está
+        cloneHRP.CFrame = originalCF
         cloneHRP.Anchored = false
         cloneHRP.CanCollide = true
 
-        -- Torna o clone totalmente visível
+        -- Torna o clone 100% visível
         for _, part in ipairs(clone:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.Transparency = 0
                 part.CanCollide = true
-                part.Material = Enum.Material.SmoothPlastic
             end
         end
 
-        -- Remove scripts do clone (exceto Animate)
+        -- Remove scripts do clone
         for _, script in ipairs(clone:GetDescendants()) do
             if (script:IsA("Script") or script:IsA("LocalScript")) and script.Name ~= "Animate" then
                 script:Destroy()
@@ -1247,11 +1248,7 @@ local function SetInvisibility(enabled)
         clone.Parent = workspace
         InvisibilityData.clone = clone
 
-        -- 3. PRIMEIRO: Move o personagem real para baixo da terra
-        hrp.Anchored = true  -- Previne interferência física
-        hrp.CFrame = CFrame.new(originalPos.X, InvisibilityData.undergroundY, originalPos.Z)
-        
-        -- Torna o personagem real invisível
+        -- Torna o personagem REAL invisível
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.Transparency = 1
@@ -1259,59 +1256,51 @@ local function SetInvisibility(enabled)
             end
         end
 
-        -- 4. Ajusta câmera para seguir o clone
+        -- **** CRÍTICO: ANCORA O CORPO REAL PARA IMPEDIR O SERVIDOR DE CORRIGIR ****
+        hrp.Anchored = true
+        
+        -- Move o personagem REAL para baixo da terra (instantâneo)
+        hrp.CFrame = CFrame.new(originalPos.X, InvisibilityData.undergroundY, originalPos.Z)
+
+        -- Ajusta câmera para seguir o clone
         workspace.CurrentCamera.CameraSubject = cloneHumanoid
         humanoid.PlatformStand = true
 
-        -- 5. Sincronização em TEMPO REAL (corrigida)
+        -- SINCRONIZAÇÃO EM TEMPO REAL
         InvisibilityData.connection = RunService.RenderStepped:Connect(function()
-            -- Verificações de segurança
-            if not InvisibilityData.active then
-                return
-            end
+            if not InvisibilityData.active then return end
             
-            -- Verifica se o clone ainda existe
             local currentClone = InvisibilityData.clone
-            if not currentClone or not currentClone.Parent then
-                return
-            end
+            if not currentClone or not currentClone.Parent then return end
 
-            -- Obtém referências atualizadas do clone
             local currentCloneHRP = currentClone:FindFirstChild("HumanoidRootPart")
             local currentCloneHumanoid = currentClone:FindFirstChildOfClass("Humanoid")
-            
-            if not currentCloneHRP or not currentCloneHumanoid then
-                return
-            end
+            if not currentCloneHRP or not currentCloneHumanoid then return end
 
-            -- Obtém referências do personagem real
             local currentChar = LocalPlayer.Character
             if not currentChar then return end
             
             local currentHRP = currentChar:FindFirstChild("HumanoidRootPart")
             local currentHumanoid = currentChar:FindFirstChildOfClass("Humanoid")
-            
             if not currentHRP or not currentHumanoid then return end
 
-            -- SINCRONIZAÇÃO DO MOVIMENTO:
-            -- O clone recebe os comandos de movimento do jogador
+            -- Move o clone baseado no input do jogador
             local moveDirection = currentHumanoid.MoveDirection
             currentCloneHumanoid:Move(moveDirection, false)
             currentCloneHumanoid.Jump = currentHumanoid.Jump
 
-            -- POSIÇÃO: O personagem real segue o clone no eixo X e Z, mas mantém Y no subsolo
+            -- SINCRONIZA: Corpo real segue o clone (apenas X e Z)
             local clonePos = currentCloneHRP.Position
             currentHRP.CFrame = CFrame.new(
-                clonePos.X, 
-                InvisibilityData.undergroundY, 
+                clonePos.X,
+                InvisibilityData.undergroundY,
                 clonePos.Z
             ) * currentCloneHRP.CFrame.Rotation
 
-            -- GARANTE que o personagem real continue invisível
+            -- Garante que o corpo real continue invisível
             for _, part in ipairs(currentChar:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.Transparency = 1
-                    part.CanCollide = false
                 end
             end
         end)
@@ -1320,16 +1309,16 @@ local function SetInvisibility(enabled)
         Notify("Invisibilidade", "Ativada - Invisível para todos!")
 
     else
-        -- DESATIVAR INVISIBILIDADE
+        -- DESATIVAR
         if not InvisibilityData.active then return end
 
-        -- Para a sincronização
+        -- Para sincronização
         if InvisibilityData.connection then
             InvisibilityData.connection:Disconnect()
             InvisibilityData.connection = nil
         end
 
-        -- Restaura o personagem real para a posição do clone
+        -- Restaura o personagem REAL para a posição do clone
         if InvisibilityData.clone then
             local cloneHRP = InvisibilityData.clone:FindFirstChild("HumanoidRootPart")
             if cloneHRP then
@@ -1339,7 +1328,7 @@ local function SetInvisibility(enabled)
             InvisibilityData.clone = nil
         end
 
-        -- Restaura visibilidade e colisão do personagem real
+        -- Restaura visibilidade do personagem real
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.Transparency = 0
@@ -1347,7 +1336,7 @@ local function SetInvisibility(enabled)
             end
         end
 
-        hrp.Anchored = false
+        hrp.Anchored = false  -- DESANCORA PARA VOLTAR AO NORMAL
         humanoid.PlatformStand = false
         workspace.CurrentCamera.CameraSubject = humanoid
 
