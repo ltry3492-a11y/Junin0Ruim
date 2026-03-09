@@ -1173,15 +1173,13 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE 100% CLIENT (CORPO REAL NO SUBSOLO) ====================
+-- ==================== INVISIBILIDADE (CORRIGIDA - TUDO NO CLIENTE) ====================
 local InvisibilityData = {
     clone = nil,
     connection = nil,
     active = false,
     undergroundY = -500
 }
-
-local TWEEN_INFO = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local function SetInvisibility(enabled)
     local character = LocalPlayer.Character
@@ -1235,36 +1233,50 @@ local function SetInvisibility(enabled)
             if part:IsA("BasePart") then
                 part.Transparency = 0
                 part.CanCollide = true
+                part.Material = Enum.Material.SmoothPlastic
             end
         end
 
-        -- Remove scripts do clone
+        -- Remove scripts do clone que podem causar conflito
         for _, script in ipairs(clone:GetDescendants()) do
             if (script:IsA("Script") or script:IsA("LocalScript")) and script.Name ~= "Animate" then
                 script:Destroy()
             end
         end
 
+        -- GARANTE QUE O ANIMATOR DO CLONE FUNCIONE
+        -- O Animator precisa ser criado pelo servidor para replicar animações [citation:1]
+        -- Mas como é um clone local, vamos forçar a animação via LoadAnimation
+        local cloneAnimator = cloneHumanoid:FindFirstChildOfClass("Animator")
+        if not cloneAnimator then
+            -- Se não tiver Animator, cria um (vai funcionar localmente)
+            cloneAnimator = Instance.new("Animator")
+            cloneAnimator.Parent = cloneHumanoid
+        end
+
         clone.Parent = workspace
         InvisibilityData.clone = clone
 
+        -- **** DESABILITA A MÁQUINA DE ESTADO DO HUMANÓIDE REAL **** [citation:4]
+        -- Isso impede que o Humanoid tente mover o personagem de volta
+        humanoid.EvaluateStateMachine = false
+        humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+        
         -- Torna o personagem REAL invisível
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.Transparency = 1
                 part.CanCollide = false
+                part.Anchored = false
             end
         end
 
-        -- **** CRÍTICO: ANCORA O CORPO REAL PARA IMPEDIR O SERVIDOR DE CORRIGIR ****
+        -- **** MOVE O PERSONAGEM REAL PARA BAIXO DA TERRA ****
         hrp.Anchored = true
-        
-        -- Move o personagem REAL para baixo da terra (instantâneo)
         hrp.CFrame = CFrame.new(originalPos.X, InvisibilityData.undergroundY, originalPos.Z)
 
         -- Ajusta câmera para seguir o clone
         workspace.CurrentCamera.CameraSubject = cloneHumanoid
-        humanoid.PlatformStand = true
 
         -- SINCRONIZAÇÃO EM TEMPO REAL
         InvisibilityData.connection = RunService.RenderStepped:Connect(function()
@@ -1306,7 +1318,7 @@ local function SetInvisibility(enabled)
         end)
 
         InvisibilityData.active = true
-        Notify("Invisibilidade", "Ativada - Invisível para todos!")
+        Notify("Invisibilidade", "Ativada - CORPO NO SUBSOLO!")
 
     else
         -- DESATIVAR
@@ -1328,6 +1340,10 @@ local function SetInvisibility(enabled)
             InvisibilityData.clone = nil
         end
 
+        -- Reativa a máquina de estado do Humanoid
+        humanoid.EvaluateStateMachine = true
+        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+
         -- Restaura visibilidade do personagem real
         for _, part in ipairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -1336,8 +1352,7 @@ local function SetInvisibility(enabled)
             end
         end
 
-        hrp.Anchored = false  -- DESANCORA PARA VOLTAR AO NORMAL
-        humanoid.PlatformStand = false
+        hrp.Anchored = false
         workspace.CurrentCamera.CameraSubject = humanoid
 
         InvisibilityData.active = false
