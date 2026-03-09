@@ -1180,8 +1180,10 @@ local InvisibilityData = {
     connection = nil,
     active = false,
     undergroundOffset = 220,
+    cloneTransparency = 0.35,
     rootMotor = nil,
-    rootMotorOriginalC0 = nil,
+    rootMotorOriginalTransform = nil,
+    realHRP = nil,
     originalPartState = {},
     cloneSyncPairs = {}
 }
@@ -1228,7 +1230,9 @@ local function HideRealCharacter(character)
                 CanCollide = inst.CanCollide,
                 LocalTransparencyModifier = inst.LocalTransparencyModifier,
             }
-            inst.CanCollide = false
+            if inst.Name ~= "HumanoidRootPart" then
+                inst.CanCollide = false
+            end
             inst.LocalTransparencyModifier = 1
         elseif inst:IsA("Decal") then
             InvisibilityData.originalPartState[inst] = {
@@ -1277,6 +1281,8 @@ end
 
 local function SyncClonePose()
     local offset = Vector3.new(0, InvisibilityData.undergroundOffset, 0)
+    local realHRP = InvisibilityData.realHRP
+
     for _, pair in ipairs(InvisibilityData.cloneSyncPairs) do
         local source = pair.source
         local target = pair.target
@@ -1284,7 +1290,14 @@ local function SyncClonePose()
             if source.Name == "HumanoidRootPart" then
                 target.CFrame = source.CFrame
             else
-                target.CFrame = source.CFrame + offset
+                local targetCF = source.CFrame
+                if realHRP and realHRP.Parent then
+                    local relativeY = source.Position.Y - realHRP.Position.Y
+                    if relativeY < -40 then
+                        targetCF = targetCF + offset
+                    end
+                end
+                target.CFrame = targetCF
             end
         end
     end
@@ -1296,8 +1309,8 @@ local function CleanupInvisibilityState()
         InvisibilityData.connection = nil
     end
 
-    if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent and InvisibilityData.rootMotorOriginalC0 then
-        InvisibilityData.rootMotor.C0 = InvisibilityData.rootMotorOriginalC0
+    if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent and InvisibilityData.rootMotorOriginalTransform then
+        InvisibilityData.rootMotor.Transform = InvisibilityData.rootMotorOriginalTransform
     end
 
     RestoreRealCharacter()
@@ -1308,7 +1321,8 @@ local function CleanupInvisibilityState()
     end
 
     InvisibilityData.rootMotor = nil
-    InvisibilityData.rootMotorOriginalC0 = nil
+    InvisibilityData.rootMotorOriginalTransform = nil
+    InvisibilityData.realHRP = nil
     InvisibilityData.cloneSyncPairs = {}
     InvisibilityData.active = false
 end
@@ -1344,6 +1358,10 @@ local function SetInvisibility(enabled)
                 inst.Anchored = true
                 inst.CanCollide = false
                 inst.Massless = true
+                inst.CastShadow = false
+                inst.Transparency = math.max(inst.Transparency, InvisibilityData.cloneTransparency)
+            elseif inst:IsA("Decal") then
+                inst.Transparency = math.max(inst.Transparency, InvisibilityData.cloneTransparency)
             end
         end
 
@@ -1351,9 +1369,10 @@ local function SetInvisibility(enabled)
 
         InvisibilityData.clone = clone
         InvisibilityData.rootMotor = rootMotor
-        InvisibilityData.rootMotorOriginalC0 = rootMotor.C0
+        InvisibilityData.rootMotorOriginalTransform = rootMotor.Transform
+        InvisibilityData.realHRP = hrp
 
-        rootMotor.C0 = InvisibilityData.rootMotorOriginalC0 * CFrame.new(0, -InvisibilityData.undergroundOffset, 0)
+        rootMotor.Transform = InvisibilityData.rootMotorOriginalTransform * CFrame.new(0, -InvisibilityData.undergroundOffset, 0)
         HideRealCharacter(character)
         BuildCloneSyncPairs(character, clone)
         SyncClonePose()
@@ -1374,8 +1393,8 @@ local function SetInvisibility(enabled)
                 return
             end
 
-            if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent and InvisibilityData.rootMotorOriginalC0 then
-                InvisibilityData.rootMotor.C0 = InvisibilityData.rootMotorOriginalC0 * CFrame.new(0, -InvisibilityData.undergroundOffset, 0)
+            if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent and InvisibilityData.rootMotorOriginalTransform then
+                InvisibilityData.rootMotor.Transform = InvisibilityData.rootMotorOriginalTransform * CFrame.new(0, -InvisibilityData.undergroundOffset, 0)
             end
 
             SyncClonePose()
