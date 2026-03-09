@@ -1201,6 +1201,9 @@ local InvisibilityData = {
     rootMotorWasEnabled = true,
     bodyRoot = nil,
     bodyRootOffset = nil,
+    bodyRootOriginalAnchored = nil,
+    bodyRootOriginalCanCollide = nil,
+    controlRootY = nil,
     realHRP = nil,
     realHRPOriginalCanCollide = nil,
     realHumanoid = nil,
@@ -1233,12 +1236,37 @@ local function FindByRelativePath(root, path)
 end
 
 local function FindRootMotor(character, hrp)
-    for _, inst in ipairs(character:GetDescendants()) do
-        if inst:IsA("Motor6D") and (inst.Part0 == hrp or inst.Part1 == hrp) then
-            return inst
+    local function isTorsoPart(part)
+        if not part or not part:IsA("BasePart") then
+            return false
+        end
+        local name = part.Name
+        return name == "LowerTorso" or name == "UpperTorso" or name == "Torso"
+    end
+
+    for _, motorName in ipairs({"RootJoint", "Root"}) do
+        local motor = character:FindFirstChild(motorName, true)
+        if motor and motor:IsA("Motor6D") and (motor.Part0 == hrp or motor.Part1 == hrp) then
+            local otherPart = (motor.Part0 == hrp) and motor.Part1 or motor.Part0
+            if isTorsoPart(otherPart) then
+                return motor
+            end
         end
     end
-    return nil
+
+    local fallback
+    for _, inst in ipairs(character:GetDescendants()) do
+        if inst:IsA("Motor6D") and (inst.Part0 == hrp or inst.Part1 == hrp) then
+            local otherPart = (inst.Part0 == hrp) and inst.Part1 or inst.Part0
+            if isTorsoPart(otherPart) then
+                return inst
+            end
+            if not fallback then
+                fallback = inst
+            end
+        end
+    end
+    return fallback
 end
 
 local function HideRealCharacter(character)
@@ -1316,9 +1344,29 @@ local function MoveDetachedBodyToOffset()
 
     local rotation = hrp.CFrame - hrp.CFrame.Position
     local bodyRootTarget = (CFrame.new(hrp.Position + Vector3.new(0, -InvisibilityData.bodyDepth, 0)) * rotation) * offset
+    bodyRoot.Anchored = true
+    bodyRoot.CanCollide = false
     bodyRoot.CFrame = bodyRootTarget
     bodyRoot.AssemblyLinearVelocity = Vector3.zero
     bodyRoot.AssemblyAngularVelocity = Vector3.zero
+end
+
+local function StabilizeControlRoot()
+    local hrp = InvisibilityData.realHRP
+    if not hrp or not hrp.Parent then
+        return
+    end
+
+    if InvisibilityData.controlRootY == nil then
+        InvisibilityData.controlRootY = hrp.Position.Y
+    end
+
+    local rotation = hrp.CFrame - hrp.CFrame.Position
+    hrp.CFrame = CFrame.new(hrp.Position.X, InvisibilityData.controlRootY, hrp.Position.Z) * rotation
+
+    local vel = hrp.AssemblyLinearVelocity
+    hrp.AssemblyLinearVelocity = Vector3.new(vel.X, 0, vel.Z)
+    hrp.AssemblyAngularVelocity = Vector3.zero
 end
 
 local function MoveCloneToMirror()
@@ -1356,6 +1404,15 @@ local function CleanupInvisibilityState(restoreCamera)
         InvisibilityData.bodyRoot.AssemblyAngularVelocity = Vector3.zero
     end
 
+    if InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.Parent then
+        if InvisibilityData.bodyRootOriginalAnchored ~= nil then
+            InvisibilityData.bodyRoot.Anchored = InvisibilityData.bodyRootOriginalAnchored
+        end
+        if InvisibilityData.bodyRootOriginalCanCollide ~= nil then
+            InvisibilityData.bodyRoot.CanCollide = InvisibilityData.bodyRootOriginalCanCollide
+        end
+    end
+
     if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent then
         InvisibilityData.rootMotor.Enabled = InvisibilityData.rootMotorWasEnabled
     end
@@ -1375,6 +1432,9 @@ local function CleanupInvisibilityState(restoreCamera)
     InvisibilityData.rootMotorWasEnabled = true
     InvisibilityData.bodyRoot = nil
     InvisibilityData.bodyRootOffset = nil
+    InvisibilityData.bodyRootOriginalAnchored = nil
+    InvisibilityData.bodyRootOriginalCanCollide = nil
+    InvisibilityData.controlRootY = nil
     InvisibilityData.realHRP = nil
     InvisibilityData.realHRPOriginalCanCollide = nil
     InvisibilityData.realHumanoid = nil
@@ -1454,8 +1514,16 @@ local function SetInvisibility(enabled)
         InvisibilityData.realHumanoid = humanoid
         InvisibilityData.bodyRoot = (rootMotor.Part0 == hrp) and rootMotor.Part1 or rootMotor.Part0
         InvisibilityData.bodyRootOffset = InvisibilityData.bodyRoot and hrp.CFrame:ToObjectSpace(InvisibilityData.bodyRoot.CFrame) or CFrame.new()
+        InvisibilityData.bodyRootOriginalAnchored = InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.Anchored or nil
+        InvisibilityData.bodyRootOriginalCanCollide = InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.CanCollide or nil
+        InvisibilityData.controlRootY = hrp.Position.Y
         InvisibilityData.cloneSyncPairs = {}
         InvisibilityData.realHidden = false
+
+        if InvisibilityData.bodyRoot then
+            InvisibilityData.bodyRoot.Anchored = true
+            InvisibilityData.bodyRoot.CanCollide = false
+        end
 
         rootMotor.Enabled = false
         hrp.CanCollide = InvisibilityData.realHRPOriginalCanCollide
@@ -1463,6 +1531,7 @@ local function SetInvisibility(enabled)
         HideRealCharacter(character)
         BuildCloneSyncPairs(character, clone)
 
+        StabilizeControlRoot()
         MoveDetachedBodyToOffset()
         MoveCloneToMirror()
         SyncCloneFromRealBody()
@@ -1487,6 +1556,7 @@ local function SetInvisibility(enabled)
                 return
             end
 
+            StabilizeControlRoot()
             MoveDetachedBodyToOffset()
             MoveCloneToMirror()
             SyncCloneFromRealBody()
