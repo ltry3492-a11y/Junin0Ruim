@@ -1173,153 +1173,215 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE FIX REAL ====================
+-- ==================== INVISIBILIDADE (CLONE VISUAL + CORPO REAL NO SUBSOLO) ====================
 
 local InvisibilityData = {
     clone = nil,
     connection = nil,
     active = false,
-    undergroundY = -600
+    undergroundOffset = 220,
+    rootMotor = nil,
+    rootMotorOriginalC0 = nil,
+    originalPartState = {},
+    cloneSyncPairs = {}
 }
 
-local function HideCharacter(char)
-    for _,v in pairs(char:GetDescendants()) do
-        if v:IsA("BasePart") then
-            v.Transparency = 1
-            v.LocalTransparencyModifier = 1
-            v.CanCollide = false
-        end
+local function GetRelativePath(root, obj)
+    local path = {}
+    local current = obj
+    while current and current ~= root do
+        table.insert(path, 1, current.Name)
+        current = current.Parent
+    end
+    if current ~= root then
+        return nil
+    end
+    return path
+end
 
-        if v:IsA("Decal") then
-            v.Transparency = 1
+local function FindByRelativePath(root, path)
+    local current = root
+    for _, segment in ipairs(path) do
+        current = current:FindFirstChild(segment)
+        if not current then
+            return nil
+        end
+    end
+    return current
+end
+
+local function FindRootMotor(character, hrp)
+    for _, inst in ipairs(character:GetDescendants()) do
+        if inst:IsA("Motor6D") and (inst.Part0 == hrp or inst.Part1 == hrp) then
+            return inst
+        end
+    end
+    return nil
+end
+
+local function HideRealCharacter(character)
+    InvisibilityData.originalPartState = {}
+
+    for _, inst in ipairs(character:GetDescendants()) do
+        if inst:IsA("BasePart") then
+            InvisibilityData.originalPartState[inst] = {
+                CanCollide = inst.CanCollide,
+                LocalTransparencyModifier = inst.LocalTransparencyModifier,
+            }
+            inst.CanCollide = false
+            inst.LocalTransparencyModifier = 1
+        elseif inst:IsA("Decal") then
+            InvisibilityData.originalPartState[inst] = {
+                Transparency = inst.Transparency
+            }
+            inst.Transparency = 1
         end
     end
 end
 
-local function ShowCharacter(char)
-    for _,v in pairs(char:GetDescendants()) do
-        if v:IsA("BasePart") then
-            v.Transparency = 0
-            v.LocalTransparencyModifier = 0
-            v.CanCollide = true
-        end
-
-        if v:IsA("Decal") then
-            v.Transparency = 0
+local function RestoreRealCharacter()
+    for inst, state in pairs(InvisibilityData.originalPartState) do
+        if inst and inst.Parent then
+            if inst:IsA("BasePart") then
+                if state.CanCollide ~= nil then
+                    inst.CanCollide = state.CanCollide
+                end
+                if state.LocalTransparencyModifier ~= nil then
+                    inst.LocalTransparencyModifier = state.LocalTransparencyModifier
+                end
+            elseif inst:IsA("Decal") then
+                if state.Transparency ~= nil then
+                    inst.Transparency = state.Transparency
+                end
+            end
         end
     end
+    InvisibilityData.originalPartState = {}
+end
+
+local function BuildCloneSyncPairs(character, clone)
+    InvisibilityData.cloneSyncPairs = {}
+
+    for _, source in ipairs(character:GetDescendants()) do
+        if source:IsA("BasePart") then
+            local path = GetRelativePath(character, source)
+            if path then
+                local target = FindByRelativePath(clone, path)
+                if target and target:IsA("BasePart") then
+                    table.insert(InvisibilityData.cloneSyncPairs, {source = source, target = target})
+                end
+            end
+        end
+    end
+end
+
+local function SyncClonePose()
+    local offset = Vector3.new(0, InvisibilityData.undergroundOffset, 0)
+    for _, pair in ipairs(InvisibilityData.cloneSyncPairs) do
+        local source = pair.source
+        local target = pair.target
+        if source and source.Parent and target and target.Parent then
+            if source.Name == "HumanoidRootPart" then
+                target.CFrame = source.CFrame
+            else
+                target.CFrame = source.CFrame + offset
+            end
+        end
+    end
+end
+
+local function CleanupInvisibilityState()
+    if InvisibilityData.connection then
+        InvisibilityData.connection:Disconnect()
+        InvisibilityData.connection = nil
+    end
+
+    if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent and InvisibilityData.rootMotorOriginalC0 then
+        InvisibilityData.rootMotor.C0 = InvisibilityData.rootMotorOriginalC0
+    end
+
+    RestoreRealCharacter()
+
+    if InvisibilityData.clone then
+        InvisibilityData.clone:Destroy()
+        InvisibilityData.clone = nil
+    end
+
+    InvisibilityData.rootMotor = nil
+    InvisibilityData.rootMotorOriginalC0 = nil
+    InvisibilityData.cloneSyncPairs = {}
+    InvisibilityData.active = false
 end
 
 local function SetInvisibility(enabled)
-
-    local character = LocalPlayer.Character
-    if not character then return end
-
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-
-    if not humanoid or not hrp then return end
-
     if enabled then
-
-        if InvisibilityData.active then return end
-
-        local originalCF = hrp.CFrame
-
-        -- cria clone
-        character.Archivable = true
-        local clone = character:Clone()
-        character.Archivable = false
-
-        clone.Parent = workspace
-        clone.Name = "InvisibleClone"
-
-        local cloneHumanoid = clone:FindFirstChildOfClass("Humanoid")
-        local cloneHRP = clone:FindFirstChild("HumanoidRootPart")
-
-        if not cloneHumanoid or not cloneHRP then
-            clone:Destroy()
+        if InvisibilityData.active then
             return
         end
 
-        cloneHRP.CFrame = originalCF
+        local character = LocalPlayer.Character
+        if not character then return end
 
-        -- remove scripts do clone
-        for _,v in pairs(clone:GetDescendants()) do
-            if v:IsA("Script") then
-                v:Destroy()
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or not hrp then return end
+
+        local rootMotor = FindRootMotor(character, hrp)
+        if not rootMotor then
+            Notify("Invisibility", "Motor6D raiz não encontrado no personagem.")
+            return
+        end
+
+        character.Archivable = true
+        local clone = character:Clone()
+        character.Archivable = false
+        clone.Name = "InvisibleClone"
+
+        for _, inst in ipairs(clone:GetDescendants()) do
+            if inst:IsA("BaseScript") then
+                inst:Destroy()
+            elseif inst:IsA("BasePart") then
+                inst.Anchored = true
+                inst.CanCollide = false
+                inst.Massless = true
             end
         end
+
+        clone.Parent = workspace
 
         InvisibilityData.clone = clone
+        InvisibilityData.rootMotor = rootMotor
+        InvisibilityData.rootMotorOriginalC0 = rootMotor.C0
 
-        -- desativa humanoid real
-        humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-        humanoid.PlatformStand = true
-
-        -- invisível
-        HideCharacter(character)
-
-        -- move corpo real
-        hrp.CFrame = CFrame.new(
-            originalCF.X,
-            InvisibilityData.undergroundY,
-            originalCF.Z
-        )
-
-        workspace.CurrentCamera.CameraSubject = cloneHumanoid
-
-        -- loop fix
-        InvisibilityData.connection = RunService.RenderStepped:Connect(function()
-
-            if not InvisibilityData.active then return end
-
-            if not clone or not clone.Parent then return end
-
-            local cloneHRP = clone:FindFirstChild("HumanoidRootPart")
-            if not cloneHRP then return end
-
-            -- mantém invisível
-            HideCharacter(character)
-
-            -- força corpo no subsolo
-            hrp.CFrame = CFrame.new(
-                cloneHRP.Position.X,
-                InvisibilityData.undergroundY,
-                cloneHRP.Position.Z
-            )
-
-        end)
+        rootMotor.C0 = InvisibilityData.rootMotorOriginalC0 * CFrame.new(0, -InvisibilityData.undergroundOffset, 0)
+        HideRealCharacter(character)
+        BuildCloneSyncPairs(character, clone)
+        SyncClonePose()
 
         InvisibilityData.active = true
-        Notify("Invisibilidade","Ativada")
-
-    else
-
-        if not InvisibilityData.active then return end
-
-        if InvisibilityData.connection then
-            InvisibilityData.connection:Disconnect()
-        end
-
-        if InvisibilityData.clone then
-            local cloneHRP = InvisibilityData.clone:FindFirstChild("HumanoidRootPart")
-            if cloneHRP then
-                hrp.CFrame = cloneHRP.CFrame
+        InvisibilityData.connection = RunService.RenderStepped:Connect(function()
+            if not InvisibilityData.active then
+                return
             end
-            InvisibilityData.clone:Destroy()
-        end
 
-        humanoid.PlatformStand = false
-        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+            if not LocalPlayer.Character or LocalPlayer.Character ~= character or not character.Parent then
+                task.defer(CleanupInvisibilityState)
+                return
+            end
 
-        ShowCharacter(character)
+            if not InvisibilityData.clone or not InvisibilityData.clone.Parent then
+                task.defer(CleanupInvisibilityState)
+                return
+            end
 
-        workspace.CurrentCamera.CameraSubject = humanoid
+            if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent and InvisibilityData.rootMotorOriginalC0 then
+                InvisibilityData.rootMotor.C0 = InvisibilityData.rootMotorOriginalC0 * CFrame.new(0, -InvisibilityData.undergroundOffset, 0)
+            end
 
-        InvisibilityData.active = false
-        Notify("Invisibilidade","Desativada")
-
+            SyncClonePose()
+        end)
+    else
+        CleanupInvisibilityState()
     end
 end
 
@@ -2101,6 +2163,9 @@ end)
 
 -- ==================== EVENTOS DE PERSONAGEM ====================
 LocalPlayer.CharacterAdded:Connect(function()
+    Settings.InvisibilityEnabled = false
+    CleanupInvisibilityState()
+
     CachedBulletsLabel = nil
     CurrentTarget = nil
     IsShooting = false
