@@ -86,17 +86,6 @@ local WeaponCoordinates = {
 local SavedPosition = nil
 local SavedCFrame = nil
 
--- Função auxiliar de notificação
-local function Notify(title, text)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = title,
-            Text = text,
-            Duration = 3,
-        })
-    end)
-end
-
 -- ==================== FUNÇÕES DE SERIALIZAÇÃO ====================
 local function SerializeSettings()
     local serializableSettings = {}
@@ -1184,7 +1173,7 @@ local function SetNoClip(enabled)
     end
 end
 
--- ==================== INVISIBILIDADE (INSERIDA AQUI) ====================
+-- ==================== INVISIBILIDADE CORRIGIDA (CORPO REAL PARA -500) ====================
 local InvisibilityData = {
     originalCF = nil,
     groundLevel = nil,
@@ -1362,6 +1351,8 @@ local function SetInvisibility(enabled)
         Notify("Invisibilidade", "Desativada")
     end
 end
+
+_G.SetInvisibility = SetInvisibility
 
 -- ==================== FUNÇÕES DE TELEPORTE ====================
 local function Teleport(position)
