@@ -1336,11 +1336,25 @@ local function BuildCloneSyncPairs(character, clone)
 end
 
 local function MoveDetachedBodyToOffset()
-    local rootMotor = InvisibilityData.rootMotor
-    if not rootMotor or not rootMotor.Parent then
+    local hrp = InvisibilityData.realHRP
+    local bodyRoot = InvisibilityData.bodyRoot
+    local offset = InvisibilityData.bodyRootOffset
+    if not hrp or not hrp.Parent or not bodyRoot or not bodyRoot.Parent or not offset then
         return
     end
-    rootMotor.Transform = CFrame.new(0, -InvisibilityData.bodyDepth, 0)
+
+    local rootMotor = InvisibilityData.rootMotor
+    if rootMotor and rootMotor.Parent and rootMotor.Enabled then
+        rootMotor.Enabled = false
+    end
+
+    local rotation = hrp.CFrame - hrp.CFrame.Position
+    local bodyRootTarget = (CFrame.new(hrp.Position + Vector3.new(0, -InvisibilityData.bodyDepth, 0)) * rotation) * offset
+    bodyRoot.Anchored = false
+    bodyRoot.CanCollide = false
+    bodyRoot.CFrame = bodyRootTarget
+    bodyRoot.AssemblyLinearVelocity = Vector3.zero
+    bodyRoot.AssemblyAngularVelocity = Vector3.zero
 end
 
 local function StabilizeControlRoot()
@@ -1376,9 +1390,15 @@ local function CleanupInvisibilityState(restoreCamera)
         InvisibilityData.connection = nil
     end
 
+    if InvisibilityData.realHRP and InvisibilityData.realHRP.Parent and InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.Parent and InvisibilityData.bodyRootOffset then
+        InvisibilityData.bodyRoot.CFrame = InvisibilityData.realHRP.CFrame * InvisibilityData.bodyRootOffset
+        InvisibilityData.bodyRoot.AssemblyLinearVelocity = Vector3.zero
+        InvisibilityData.bodyRoot.AssemblyAngularVelocity = Vector3.zero
+    end
+
     if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent then
         InvisibilityData.rootMotor.Transform = InvisibilityData.rootMotorOriginalTransform or CFrame.new()
-        InvisibilityData.rootMotor.Enabled = InvisibilityData.rootMotorWasEnabled
+        InvisibilityData.rootMotor.Enabled = true
     end
 
     if InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.Parent then
@@ -1394,6 +1414,13 @@ local function CleanupInvisibilityState(restoreCamera)
 
     if InvisibilityData.realHRP and InvisibilityData.realHRP.Parent and InvisibilityData.realHRPOriginalCanCollide ~= nil then
         InvisibilityData.realHRP.CanCollide = InvisibilityData.realHRPOriginalCanCollide
+    end
+
+    if InvisibilityData.realHumanoid and InvisibilityData.realHumanoid.Parent then
+        InvisibilityData.realHumanoid.PlatformStand = false
+        InvisibilityData.realHumanoid.Sit = false
+        InvisibilityData.realHumanoid.AutoRotate = true
+        InvisibilityData.realHumanoid:ChangeState(Enum.HumanoidStateType.Running)
     end
 
     if InvisibilityData.clone then
@@ -1430,11 +1457,49 @@ local function CleanupInvisibilityState(restoreCamera)
     end
 end
 
+local function ForceRestoreCharacterRig()
+    local character = LocalPlayer.Character
+    if not character then
+        return
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        for _, inst in ipairs(character:GetDescendants()) do
+            if inst:IsA("Motor6D") and (inst.Part0 == hrp or inst.Part1 == hrp) then
+                inst.Enabled = true
+                inst.Transform = CFrame.new()
+            end
+        end
+
+        local rootMotor = FindRootMotor(character, hrp)
+        if rootMotor and rootMotor.Parent then
+            rootMotor.Enabled = true
+        end
+    end
+
+    for _, torsoName in ipairs({"Torso", "UpperTorso", "LowerTorso"}) do
+        local torso = character:FindFirstChild(torsoName, true)
+        if torso and torso:IsA("BasePart") then
+            torso.Anchored = false
+        end
+    end
+
+    if humanoid then
+        humanoid.PlatformStand = false
+        humanoid.Sit = false
+        humanoid.AutoRotate = true
+        humanoid:ChangeState(Enum.HumanoidStateType.Running)
+    end
+end
+
 local function SetInvisibility(enabled)
     if enabled then
         if InvisibilityData.active then
             return
         end
+        ForceRestoreCharacterRig()
 
         local character = LocalPlayer.Character
         if not character then return end
@@ -1495,8 +1560,14 @@ local function SetInvisibility(enabled)
         InvisibilityData.cloneSyncPairs = {}
         InvisibilityData.realHidden = false
 
-        rootMotor.Transform = CFrame.new(0, -InvisibilityData.bodyDepth, 0)
+        rootMotor.Transform = CFrame.new()
+        rootMotor.Enabled = false
         hrp.CanCollide = InvisibilityData.realHRPOriginalCanCollide
+
+        if InvisibilityData.bodyRoot then
+            InvisibilityData.bodyRoot.Anchored = false
+            InvisibilityData.bodyRoot.CanCollide = false
+        end
 
         HideRealCharacter(character)
         BuildCloneSyncPairs(character, clone)
@@ -1506,7 +1577,7 @@ local function SetInvisibility(enabled)
         SyncCloneFromRealBody()
         local camera = workspace.CurrentCamera
         if camera then
-            camera.CameraSubject = cloneHumanoid
+            camera.CameraSubject = humanoid
         end
 
         InvisibilityData.active = true
@@ -1530,16 +1601,18 @@ local function SetInvisibility(enabled)
             SyncCloneFromRealBody()
             HideRealCharacter(character)
             local camera = workspace.CurrentCamera
-            if camera and InvisibilityData.cloneHumanoid and camera.CameraSubject ~= InvisibilityData.cloneHumanoid then
-                camera.CameraSubject = InvisibilityData.cloneHumanoid
+            if camera and InvisibilityData.realHumanoid and camera.CameraSubject ~= InvisibilityData.realHumanoid then
+                camera.CameraSubject = InvisibilityData.realHumanoid
             end
         end)
     else
         CleanupInvisibilityState(true)
+        ForceRestoreCharacterRig()
     end
 end
 
 _G.SetInvisibility = SetInvisibility
+_G.ForceRestoreCharacterRig = ForceRestoreCharacterRig
 
 -- ==================== FUNÇÕES DE TELEPORTE ====================
 local function Teleport(position)
@@ -1738,6 +1811,7 @@ local function DestroyUIAndScript()
     PortalCooldown = {}
 
     _G.SetInvisibility = nil
+    _G.ForceRestoreCharacterRig = nil
     _G.DestroyUIAndScript = nil
 end
 
@@ -2433,6 +2507,7 @@ end))
 
 -- ==================== INICIALIZAÇÃO FINAL ====================
 CleanupExistingUI()
+ForceRestoreCharacterRig()
 CreateVisuals()
 LoadSettings()
 InitializeUI()
