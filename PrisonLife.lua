@@ -1,4 +1,5 @@
 local TweenService = game:GetService("TweenService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -58,8 +59,10 @@ end
 
 -- ==================== FUNÇÃO DE TOGGLE DA UI ====================
 local UIComponents = { MainFrame = nil, TabButtons = {}, TabContents = {}, CloseButton = nil, ScreenGui = nil }
+local ScriptDestroyed = false
 
 local function ToggleUI()
+    if ScriptDestroyed then return end
     UISettings.Visible = not UISettings.Visible
     if UIComponents and UIComponents.MainFrame then
         UIComponents.MainFrame.Visible = UISettings.Visible
@@ -171,6 +174,15 @@ local OriginalReloadTime = {}
 local OriginalAutoFire = {}
 local RapidFireWatchers = {}
 local FastReloadWatchers = {}
+local ActiveSounds = {}
+local RuntimeConnections = {}
+
+local function TrackConnection(conn)
+    if conn then
+        table.insert(RuntimeConnections, conn)
+    end
+    return conn
+end
 
 -- ==================== MAPEAMENTO DE NOMES DE TECLAS ====================
 local KeybindNames = {
@@ -1182,7 +1194,9 @@ local InvisibilityData = {
     undergroundOffset = 220,
     cloneTransparency = 0.35,
     rootMotor = nil,
-    rootMotorOriginalTransform = nil,
+    rootMotorWasEnabled = true,
+    bodyRoot = nil,
+    bodyRootOffset = nil,
     realHRP = nil,
     originalPartState = {},
     cloneSyncPairs = {}
@@ -1309,8 +1323,8 @@ local function CleanupInvisibilityState()
         InvisibilityData.connection = nil
     end
 
-    if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent and InvisibilityData.rootMotorOriginalTransform then
-        InvisibilityData.rootMotor.Transform = InvisibilityData.rootMotorOriginalTransform
+    if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent then
+        InvisibilityData.rootMotor.Enabled = InvisibilityData.rootMotorWasEnabled
     end
 
     RestoreRealCharacter()
@@ -1321,7 +1335,9 @@ local function CleanupInvisibilityState()
     end
 
     InvisibilityData.rootMotor = nil
-    InvisibilityData.rootMotorOriginalTransform = nil
+    InvisibilityData.rootMotorWasEnabled = true
+    InvisibilityData.bodyRoot = nil
+    InvisibilityData.bodyRootOffset = nil
     InvisibilityData.realHRP = nil
     InvisibilityData.cloneSyncPairs = {}
     InvisibilityData.active = false
@@ -1369,11 +1385,22 @@ local function SetInvisibility(enabled)
 
         InvisibilityData.clone = clone
         InvisibilityData.rootMotor = rootMotor
-        InvisibilityData.rootMotorOriginalTransform = rootMotor.Transform
+        InvisibilityData.rootMotorWasEnabled = rootMotor.Enabled
         InvisibilityData.realHRP = hrp
+        InvisibilityData.bodyRoot = (rootMotor.Part0 == hrp) and rootMotor.Part1 or rootMotor.Part0
+        InvisibilityData.bodyRootOffset = InvisibilityData.bodyRoot and hrp.CFrame:ToObjectSpace(InvisibilityData.bodyRoot.CFrame) or CFrame.new()
 
-        rootMotor.Transform = InvisibilityData.rootMotorOriginalTransform * CFrame.new(0, -InvisibilityData.undergroundOffset, 0)
+        rootMotor.Enabled = false
+
         HideRealCharacter(character)
+
+        if InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.Parent then
+            local sinkCFrame = hrp.CFrame * CFrame.new(0, -InvisibilityData.undergroundOffset, 0) * InvisibilityData.bodyRootOffset
+            InvisibilityData.bodyRoot.CFrame = sinkCFrame
+            InvisibilityData.bodyRoot.AssemblyLinearVelocity = Vector3.zero
+            InvisibilityData.bodyRoot.AssemblyAngularVelocity = Vector3.zero
+        end
+
         BuildCloneSyncPairs(character, clone)
         SyncClonePose()
 
@@ -1393,8 +1420,11 @@ local function SetInvisibility(enabled)
                 return
             end
 
-            if InvisibilityData.rootMotor and InvisibilityData.rootMotor.Parent and InvisibilityData.rootMotorOriginalTransform then
-                InvisibilityData.rootMotor.Transform = InvisibilityData.rootMotorOriginalTransform * CFrame.new(0, -InvisibilityData.undergroundOffset, 0)
+            if InvisibilityData.bodyRoot and InvisibilityData.bodyRoot.Parent and InvisibilityData.realHRP and InvisibilityData.realHRP.Parent then
+                local sinkCFrame = InvisibilityData.realHRP.CFrame * CFrame.new(0, -InvisibilityData.undergroundOffset, 0) * InvisibilityData.bodyRootOffset
+                InvisibilityData.bodyRoot.CFrame = sinkCFrame
+                InvisibilityData.bodyRoot.AssemblyLinearVelocity = Vector3.zero
+                InvisibilityData.bodyRoot.AssemblyAngularVelocity = Vector3.zero
             end
 
             SyncClonePose()
@@ -1529,6 +1559,85 @@ local function CreatePortal()
     Notify("Portal criado", "Use os portais para teleportar.")
 end
 
+-- ==================== DESTRUIR UI E SCRIPT ====================
+local function DestroyUIAndScript()
+    if ScriptDestroyed then
+        return
+    end
+    ScriptDestroyed = true
+
+    Settings.Enabled = false
+    Settings.ShowFOV = false
+    Settings.ShowTargetLine = false
+    Settings.NoClipEnabled = false
+    Settings.InvisibilityEnabled = false
+    Settings.RapidFireEnabled = false
+    Settings.FastReloadEnabled = false
+
+    pcall(function()
+        ContextActionService:UnbindAction("SilentAimShoot")
+    end)
+
+    SetNoClip(false)
+    CleanupInvisibilityState()
+    DisableESP()
+    ToggleRapidFire(false)
+    ToggleFastReload(false)
+
+    for _, conn in ipairs(RuntimeConnections) do
+        if conn and conn.Connected then
+            conn:Disconnect()
+        end
+    end
+    RuntimeConnections = {}
+
+    if NoClipConnection and NoClipConnection.Connected then
+        NoClipConnection:Disconnect()
+    end
+    NoClipConnection = nil
+
+    if Visuals and Visuals.Gui and Visuals.Gui.Parent then
+        Visuals.Gui:Destroy()
+    end
+    Visuals.Gui = nil
+    Visuals.Circle = nil
+    Visuals.Line = nil
+
+    local visualsInCore = CoreGui:FindFirstChild("JGSilentAimVisuals")
+    if visualsInCore then
+        visualsInCore:Destroy()
+    end
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if pg then
+        local visualsInPG = pg:FindFirstChild("JGSilentAimVisuals")
+        if visualsInPG then
+            visualsInPG:Destroy()
+        end
+    end
+
+    CleanupExistingUI()
+
+    for key, sound in pairs(ActiveSounds) do
+        if sound and sound.Parent then
+            sound:Destroy()
+        end
+    end
+    table.clear(ActiveSounds)
+
+    for _, part in ipairs(PortalParts) do
+        if part and part.Parent then
+            part:Destroy()
+        end
+    end
+    PortalParts = {}
+    PortalCooldown = {}
+
+    _G.SetInvisibility = nil
+    _G.DestroyUIAndScript = nil
+end
+
+_G.DestroyUIAndScript = DestroyUIAndScript
+
 -- ==================== INICIALIZAÇÃO DA UI ====================
 local function InitializeUI()
     local screenGui, mainFrame, tabContainer, contentContainer = CreateModernUI()     
@@ -1620,6 +1729,7 @@ local function InitializeUI()
     CreateKeybindSelector(settingsContent, "Toggle Aimbot", Settings.ToggleKey, function(k) Settings.ToggleKey = k end)
     CreateButton(settingsContent, "Salvar Configurações", SaveSettings)
     CreateButton(settingsContent, "Carregar Configurações", LoadSettings)
+    CreateButton(settingsContent, "Destroy UI", DestroyUIAndScript)
 
     -- Tornar arrastável
     MakeDraggable(mainFrame, mainFrame:FindFirstChild("Header"))
@@ -1788,7 +1898,6 @@ local function GetMissPosition(targetPos)
 end
 
 -- ==================== SONS E TRAÇADORES ====================
-local ActiveSounds = {}
 local function PlayGunSound(gun)
     if not gun then return end
     local handle = gun:FindFirstChild("Handle")
@@ -2071,6 +2180,10 @@ end
 
 -- ==================== CONTEXTO DE AÇÃO (CLIQUE) ====================
 local function HandleAction(actionName, inputState, inputObject)
+    if ScriptDestroyed then
+        return Enum.ContextActionResult.Pass
+    end
+
     if actionName == "SilentAimShoot" then
         if inputState == Enum.UserInputState.Begin then
             local gun = GetEquippedGun()
@@ -2108,7 +2221,8 @@ if IsMobile then
 end
 
 -- ==================== INPUT DE TECLADO ====================
-UserInputService.InputBegan:Connect(function(input, gpe)
+TrackConnection(UserInputService.InputBegan:Connect(function(input, gpe)
+    if ScriptDestroyed then return end
     if gpe then return end
     if not IsMobile and input.KeyCode == UISettings.ToggleUIKey then
         ToggleUI()
@@ -2118,10 +2232,11 @@ UserInputService.InputBegan:Connect(function(input, gpe)
         Settings.Enabled = not Settings.Enabled
         Notify("JG SilentAim", "Aimbot: " .. (Settings.Enabled and "ON" or "OFF"))
     end
-end)
+end))
 
 -- ==================== RENDER STEP ====================
-RunService.RenderStepped:Connect(function()
+TrackConnection(RunService.RenderStepped:Connect(function()
+    if ScriptDestroyed then return end
     local mousePos = UserInputService:GetMouseLocation()
 
     if Visuals.Circle then
@@ -2170,18 +2285,20 @@ RunService.RenderStepped:Connect(function()
             end
         end
     end
-end)
+end))
 
-RunService.Heartbeat:Connect(function()
+TrackConnection(RunService.Heartbeat:Connect(function()
+    if ScriptDestroyed then return end
     if not IsShooting then return end
     local gun = GetEquippedGun()
     if gun and gun:GetAttribute("AutoFire") then
         FireSilentAim(gun)
     end
-end)
+end))
 
 -- ==================== EVENTOS DE PERSONAGEM ====================
-LocalPlayer.CharacterAdded:Connect(function()
+TrackConnection(LocalPlayer.CharacterAdded:Connect(function()
+    if ScriptDestroyed then return end
     Settings.InvisibilityEnabled = false
     CleanupInvisibilityState()
 
@@ -2195,18 +2312,19 @@ LocalPlayer.CharacterAdded:Connect(function()
         end
     end
     table.clear(ActiveSounds)
-end)
+end))
 
-LocalPlayer.CharacterAdded:Connect(hookCharacterWeaponMods)
+TrackConnection(LocalPlayer.CharacterAdded:Connect(hookCharacterWeaponMods))
 if LocalPlayer.Character then hookCharacterWeaponMods(LocalPlayer.Character) end
 
-backpack.ChildAdded:Connect(function(child)
+TrackConnection(backpack.ChildAdded:Connect(function(child)
+    if ScriptDestroyed then return end
     if child:IsA("Tool") then
         task.wait(0.1)
         applyRapidFireToTool(child)
         applyFastReloadToTool(child)
     end
-end)
+end))
 
 -- ==================== INICIALIZAÇÃO FINAL ====================
 CleanupExistingUI()
