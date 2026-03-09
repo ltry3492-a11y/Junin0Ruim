@@ -1141,8 +1141,56 @@ end
 
 -- ==================== NOCLIP CORRIGIDO ====================
 local NoClipConnection = nil
+local NoClipPartStates = {}
+
+local function CaptureNoClipPartState(part)
+    if NoClipPartStates[part] == nil then
+        NoClipPartStates[part] = {
+            CanCollide = part.CanCollide,
+            CanTouch = part.CanTouch
+        }
+    end
+end
+
+local function ApplyNoClipToCharacter(character)
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            CaptureNoClipPartState(part)
+            part.CanCollide = false
+            part.CanTouch = false
+        end
+    end
+end
+
+local function RestoreNoClipParts()
+    for part, state in pairs(NoClipPartStates) do
+        if part and part.Parent then
+            part.CanCollide = state.CanCollide
+            part.CanTouch = state.CanTouch
+        end
+    end
+    table.clear(NoClipPartStates)
+end
 
 local function SetNoClip(enabled)
+    if not enabled then
+        if NoClipConnection and NoClipConnection.Connected then
+            NoClipConnection:Disconnect()
+        end
+        RestoreNoClipParts()
+
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.PlatformStand = false
+            humanoid.AutoRotate = true
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        end
+
+        Notify("NoClip", "Desativado.")
+        return
+    end
+
     local character = LocalPlayer.Character
     if not character then return end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -1153,34 +1201,26 @@ local function SetNoClip(enabled)
             NoClipConnection:Disconnect()
         end
 
-        humanoid:ChangeState(Enum.HumanoidStateType.Flying)
+        ApplyNoClipToCharacter(character)
 
         NoClipConnection = RunService.Stepped:Connect(function()
             if not Settings.NoClipEnabled or not LocalPlayer.Character then
                 if NoClipConnection and NoClipConnection.Connected then
                     NoClipConnection:Disconnect()
                 end
+                RestoreNoClipParts()
                 return
             end
             local char = LocalPlayer.Character
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
-            end
+            ApplyNoClipToCharacter(char)
             local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum and hum:GetState() ~= Enum.HumanoidStateType.Flying then
-                hum:ChangeState(Enum.HumanoidStateType.Flying)
+            if hum then
+                hum.PlatformStand = false
+                hum:ChangeState(Enum.HumanoidStateType.Physics)
             end
         end)
 
         Notify("NoClip", "Ativado – você atravessa paredes.")
-    else
-        if NoClipConnection and NoClipConnection.Connected then
-            NoClipConnection:Disconnect()
-        end
-        humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        Notify("NoClip", "Desativado.")
     end
 end
 
@@ -1255,19 +1295,15 @@ local function FindRootMotor(character, hrp)
         end
     end
 
-    local fallback
     for _, inst in ipairs(character:GetDescendants()) do
         if inst:IsA("Motor6D") and (inst.Part0 == hrp or inst.Part1 == hrp) then
             local otherPart = (inst.Part0 == hrp) and inst.Part1 or inst.Part0
             if isTorsoPart(otherPart) then
                 return inst
             end
-            if not fallback then
-                fallback = inst
-            end
         end
     end
-    return fallback
+    return nil
 end
 
 local function HideRealCharacter(character)
@@ -1350,7 +1386,7 @@ local function MoveDetachedBodyToOffset()
 
     local rotation = hrp.CFrame - hrp.CFrame.Position
     local bodyRootTarget = (CFrame.new(hrp.Position + Vector3.new(0, -InvisibilityData.bodyDepth, 0)) * rotation) * offset
-    bodyRoot.Anchored = false
+    bodyRoot.Anchored = true
     bodyRoot.CanCollide = false
     bodyRoot.CFrame = bodyRootTarget
     bodyRoot.AssemblyLinearVelocity = Vector3.zero
@@ -1466,6 +1502,8 @@ local function ForceRestoreCharacterRig()
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if hrp then
+        hrp.Anchored = false
+
         for _, inst in ipairs(character:GetDescendants()) do
             if inst:IsA("Motor6D") and (inst.Part0 == hrp or inst.Part1 == hrp) then
                 inst.Enabled = true
@@ -1565,7 +1603,7 @@ local function SetInvisibility(enabled)
         hrp.CanCollide = InvisibilityData.realHRPOriginalCanCollide
 
         if InvisibilityData.bodyRoot then
-            InvisibilityData.bodyRoot.Anchored = false
+            InvisibilityData.bodyRoot.Anchored = true
             InvisibilityData.bodyRoot.CanCollide = false
         end
 
@@ -2189,12 +2227,23 @@ local function RollHitChance()
     return math.random(1, 100) <= Settings.HitChance
 end
 
+local function GetAimScreenPosition()
+    local camera = workspace.CurrentCamera
+    if IsMobile and camera then
+        local viewport = camera.ViewportSize
+        return Vector2.new(viewport.X * 0.5, viewport.Y * 0.5)
+    end
+
+    local mouse = UserInputService:GetMouseLocation()
+    return Vector2.new(mouse.X, mouse.Y)
+end
+
 -- ==================== SELEÇÃO DE ALVO ====================
 local function GetClosestTarget()
     local camera = workspace.CurrentCamera
     if not camera then return nil end
 
-    local mousePos = UserInputService:GetMouseLocation()
+    local aimPos = GetAimScreenPosition()
     local candidates = {}
 
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -2203,7 +2252,7 @@ local function GetClosestTarget()
             if targetPart then
                 local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
                 if onScreen then
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - aimPos).Magnitude
                     if dist < Settings.FOV then
                         table.insert(candidates, {player = plr, distance = dist})
                     end
@@ -2283,8 +2332,13 @@ local function FireSilentAim(gun)
 
     local hitPos, hitPart
 
-    if Settings.Enabled and CurrentTarget and CurrentTarget.Character and IsValidTargetFull(CurrentTarget) then
-        local targetPart = GetTargetPart(CurrentTarget.Character)
+    local targetPlayer = CurrentTarget
+    if IsMobile and Settings.Enabled then
+        targetPlayer = GetClosestTarget() or targetPlayer
+    end
+
+    if Settings.Enabled and targetPlayer and targetPlayer.Character and IsValidTargetFull(targetPlayer) then
+        local targetPart = GetTargetPart(targetPlayer.Character)
         if targetPart then
             if RollHitChance() then
                 hitPos = targetPart.Position
@@ -2297,9 +2351,10 @@ local function FireSilentAim(gun)
     end
 
     if not hitPos then
-        local mousePos = UserInputService:GetMouseLocation()
         local camera = workspace.CurrentCamera
-        local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
+        if not camera then return false end
+        local aimPos = GetAimScreenPosition()
+        local ray = camera:ViewportPointToRay(aimPos.X, aimPos.Y)
 
         WallCheckParams.FilterDescendantsInstances = {char}
         local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, WallCheckParams)
@@ -2416,7 +2471,7 @@ end))
 -- ==================== RENDER STEP ====================
 TrackConnection(RunService.RenderStepped:Connect(function()
     if ScriptDestroyed then return end
-    local mousePos = UserInputService:GetMouseLocation()
+    local mousePos = GetAimScreenPosition()
 
     if Visuals.Circle then
         Visuals.Circle.Visible = Settings.ShowFOV and Settings.Enabled
@@ -2480,6 +2535,14 @@ TrackConnection(LocalPlayer.CharacterAdded:Connect(function()
     if ScriptDestroyed then return end
     Settings.InvisibilityEnabled = false
     CleanupInvisibilityState()
+    RestoreNoClipParts()
+    ForceRestoreCharacterRig()
+
+    if Settings.NoClipEnabled then
+        task.defer(function()
+            SetNoClip(true)
+        end)
+    end
 
     CachedBulletsLabel = nil
     CurrentTarget = nil
