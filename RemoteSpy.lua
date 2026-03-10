@@ -22,7 +22,7 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30) -- Darker background
 MainFrame.BorderSizePixel = 1
 MainFrame.BorderColor3 = Color3.fromRGB(20, 20, 20)
 MainFrame.ClipsDescendants = true -- Clip content outside frame bounds
-MainFrame.Draggable = true -- Roblox built-in draggable property
+-- MainFrame.Draggable = true -- REMOVED: Implementing manual drag
 MainFrame.Parent = RemoteSpy
 
 local TopBar = Instance.new("Frame")
@@ -94,6 +94,34 @@ end)
 
 CloseButton.MouseButton1Click:Connect(function()
     RemoteSpy:Destroy()
+end)
+
+-- Manual Drag System
+local dragging = false
+local dragStart = Vector2.new(0, 0)
+local startPos = UDim2.new(0, 0, 0, 0)
+
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if dragging then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
 end)
 
 -- Remotes List Frame
@@ -313,11 +341,11 @@ local oldFireServer = nil
 local oldInvokeServer = nil
 
 local function hookRemotes()
-    -- Attempt to get metatables from game services directly
     local RemoteEventMetatable = getrawmetatable(game:GetService("ReplicatedStorage").RemoteEvent)
     local RemoteFunctionMetatable = getrawmetatable(game:GetService("ReplicatedStorage").RemoteFunction)
 
     -- Fallback for cases where metatables might not be directly accessible or remotes don't exist yet
+    -- Create temporary instances to get their metatables if direct access fails
     if not RemoteEventMetatable then
         local tempEvent = Instance.new("RemoteEvent")
         RemoteEventMetatable = getrawmetatable(tempEvent)
@@ -334,6 +362,7 @@ local function hookRemotes()
         return
     end
 
+    -- Hook FireServer for RemoteEvents
     oldFireServer = RemoteEventMetatable.FireServer
     RemoteEventMetatable.FireServer = newcclosure(function(self, ...)
         if not BlacklistedRemotes[self.Name] then
@@ -343,6 +372,7 @@ local function hookRemotes()
         return oldFireServer(self, unpack(args))
     end)
 
+    -- Hook InvokeServer for RemoteFunctions
     oldInvokeServer = RemoteFunctionMetatable.InvokeServer
     RemoteFunctionMetatable.InvokeServer = newcclosure(function(self, ...)
         if not BlacklistedRemotes[self.Name] then
