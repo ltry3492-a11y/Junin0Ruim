@@ -77,10 +77,14 @@ MinimizeButton.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     if isMinimized then
         TweenService:Create(MainFrame, TweenInfo.new(0.2), {Size = UDim2.new(originalSize.X.Scale, originalSize.X.Offset, 0, 30)}):Play()
-        MinimizeButton.Text = "[]"
+        MinimizeButton.Text = "□"
+        -- Esconder conteúdo quando minimizado
+        ContentFrame.Visible = false
     else
         TweenService:Create(MainFrame, TweenInfo.new(0.2), {Size = originalSize}):Play()
         MinimizeButton.Text = "_"
+        -- Mostrar conteúdo quando maximizado
+        ContentFrame.Visible = true
     end
 end)
 
@@ -160,13 +164,25 @@ CodeTextBox.ClearTextOnFocus = false
 CodeTextBox.PlaceholderText = "Aguardando detecção de remotes..."
 CodeTextBox.Parent = CodeDisplayFrame
 
+-- Action Buttons (Layout corrigido)
 local ActionButtonsFrame = Instance.new("Frame")
-ActionButtonsFrame.Size = UDim2.new(1, 0, 0, 130)
-ActionButtonsFrame.Position = UDim2.new(0, 0, 1, -130)
-ActionButtonsFrame.BackgroundTransparency = 1
+ActionButtonsFrame.Size = UDim2.new(1, -10, 0, 120)
+ActionButtonsFrame.Position = UDim2.new(0, 5, 1, -125)
+ActionButtonsFrame.BackgroundColor3 = Color3.fromRGB(28, 28, 32)
+ActionButtonsFrame.BorderSizePixel = 0
 ActionButtonsFrame.Parent = CodeDisplayFrame
 
--- Action Buttons
+-- Layout dos botões em grid
+local ButtonGrid = Instance.new("UIGridLayout")
+ButtonGrid.FillDirection = Enum.FillDirection.Horizontal
+ButtonGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+ButtonGrid.VerticalAlignment = Enum.VerticalAlignment.Center
+ButtonGrid.CellSize = UDim2.new(0, 130, 0, 35)
+ButtonGrid.CellPadding = UDim2.new(0, 8, 0, 8)
+ButtonGrid.FillDirectionMaxCells = 3
+ButtonGrid.Parent = ActionButtonsFrame
+
+-- Criar botões com tamanhos uniformes
 local CopyButton = Instance.new("TextButton")
 local FireButton = Instance.new("TextButton")
 local BlacklistButton = Instance.new("TextButton")
@@ -177,40 +193,34 @@ local buttons = {CopyButton, FireButton, BlacklistButton, ClearButton, ClearBlac
 for _, btn in ipairs(buttons) do
     btn.TextColor3 = Color3.fromRGB(230, 230, 235)
     btn.Font = Enum.Font.SourceSansSemibold
-    btn.TextSize = 15
+    btn.TextSize = 14
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
     btn.Parent = ActionButtonsFrame
 end
 
-CopyButton.Text = "Copiar Código"
+CopyButton.Text = "Copiar"
 CopyButton.BackgroundColor3 = Color3.fromRGB(80, 100, 160)
-CopyButton.Size = UDim2.new(0.48, -5, 0.48, -5)
-CopyButton.Position = UDim2.new(0.01, 0, 0.01, 0)
 
-FireButton.Text = "Disparar/Invocar"
+FireButton.Text = "Disparar"
 FireButton.BackgroundColor3 = Color3.fromRGB(80, 140, 100)
-FireButton.Size = UDim2.new(0.48, -5, 0.48, -5)
-FireButton.Position = UDim2.new(0.51, 0, 0.01, 0)
 
 BlacklistButton.Text = "Blacklist"
 BlacklistButton.BackgroundColor3 = Color3.fromRGB(160, 60, 60)
-BlacklistButton.Size = UDim2.new(0.23, -5, 0.48, -5)
-BlacklistButton.Position = UDim2.new(0.01, 0, 0.51, 0)
 
-ClearButton.Text = "Limpar Saída"
+ClearButton.Text = "Limpar"
 ClearButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-ClearButton.Size = UDim2.new(0.23, -5, 0.48, -5)
-ClearButton.Position = UDim2.new(0.26, 0, 0.51, 0)
 
 ClearBlacklistButton.Text = "Limpar Blacklist"
 ClearBlacklistButton.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
-ClearBlacklistButton.Size = UDim2.new(0.48, -5, 0.48, -5)
-ClearBlacklistButton.Position = UDim2.new(0.51, 0, 0.51, 0)
 
-setupButtonHover(CopyButton, CopyButton.BackgroundColor3, Color3.fromRGB(100, 120, 180))
-setupButtonHover(FireButton, FireButton.BackgroundColor3, Color3.fromRGB(100, 160, 120))
-setupButtonHover(BlacklistButton, BlacklistButton.BackgroundColor3, Color3.fromRGB(180, 80, 80))
-setupButtonHover(ClearButton, ClearButton.BackgroundColor3, Color3.fromRGB(120, 120, 120))
-setupButtonHover(ClearBlacklistButton, ClearBlacklistButton.BackgroundColor3, Color3.fromRGB(80, 80, 140))
+-- Hover Effects
+setupButtonHover(CopyButton, Color3.fromRGB(80, 100, 160), Color3.fromRGB(100, 120, 180))
+setupButtonHover(FireButton, Color3.fromRGB(80, 140, 100), Color3.fromRGB(100, 160, 120))
+setupButtonHover(BlacklistButton, Color3.fromRGB(160, 60, 60), Color3.fromRGB(180, 80, 80))
+setupButtonHover(ClearButton, Color3.fromRGB(100, 100, 100), Color3.fromRGB(120, 120, 120))
+setupButtonHover(ClearBlacklistButton, Color3.fromRGB(60, 60, 120), Color3.fromRGB(80, 80, 140))
 
 -- Core Logic
 local SpiedRemotes = {}
@@ -304,34 +314,76 @@ local function addRemoteToUI(remoteName, args, remoteType, remotePath)
     RemotesFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y)
 end
 
--- The __namecall Hook
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-
-    -- Only process if it's a FireServer or InvokeServer call and not from the executor itself
-    if not checkcaller() and (method == "FireServer" or method == "InvokeServer") then
-        local remoteType = (method == "FireServer") and "RemoteEvent" or "RemoteFunction"
-        if not BlacklistedRemotes[self.Name] then
-            -- Use task.spawn to avoid any potential yield issues with the game's thread
-            -- This ensures the UI update doesn't block the game's remote call
-            task.spawn(addRemoteToUI, self.Name, args, remoteType, getPathToInstance(self))
-        end
+-- Verificar se as funções necessárias existem
+local function setupHook()
+    -- Verificar se estamos em um executor que suporta as funções necessárias
+    local hookSupported = pcall(function()
+        return hookmetamethod and checkcaller and getnamecallmethod
+    end)
+    
+    if not hookSupported then
+        warn("Remote Spy: Seu executor não suporta as funções necessárias (hookmetamethod/checkcaller). Tentando método alternativo...")
+        
+        -- Método alternativo para executores que não suportam hookmetamethod
+        local oldFireServer
+        local oldInvokeServer
+        
+        oldFireServer = hookfunction(Instance.new("RemoteEvent").FireServer, function(self, ...)
+            local args = {...}
+            if not checkcaller and not checkcaller() then
+                task.spawn(addRemoteToUI, self.Name, args, "RemoteEvent", getPathToInstance(self))
+            end
+            return oldFireServer(self, ...)
+        end)
+        
+        oldInvokeServer = hookfunction(Instance.new("RemoteFunction").InvokeServer, function(self, ...)
+            local args = {...}
+            if not checkcaller and not checkcaller() then
+                task.spawn(addRemoteToUI, self.Name, args, "RemoteFunction", getPathToInstance(self))
+            end
+            return oldInvokeServer(self, ...)
+        end)
+        
+        warn("Remote Spy: Método alternativo configurado. Pode não funcionar em todos os executores.")
+        return
     end
-    return oldNamecall(self, ...)
-end)
 
-warn("Remote Spy v3.3: Hooked and ready. List will populate as remotes are called.")
+    -- Método principal com __namecall Hook
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        local method = getnamecallmethod()
+        local args = {...}
+
+        -- Only process if it's a FireServer or InvokeServer call and not from the executor itself
+        if not checkcaller() and (method == "FireServer" or method == "InvokeServer") then
+            local remoteType = (method == "FireServer") and "RemoteEvent" or "RemoteFunction"
+            if not BlacklistedRemotes[self.Name] then
+                -- Use task.spawn to avoid any potential yield issues with the game's thread
+                -- This ensures the UI update doesn't block the game's remote call
+                task.spawn(addRemoteToUI, self.Name, args, remoteType, getPathToInstance(self))
+            end
+        end
+        return oldNamecall(self, ...)
+    end)
+end
+
+-- Iniciar o hook
+local success, err = pcall(setupHook)
+if not success then
+    warn("Remote Spy: Erro ao configurar hook - " .. tostring(err))
+    warn("Remote Spy: Não foi possível detectar remotes. Verifique se seu executor suporta as funções necessárias.")
+end
+
+warn("Remote Spy v3.3: Interface carregada. Se remotes não aparecerem, seu executor pode não suportar a detecção.")
 
 -- Button Actions Logic
 CopyButton.MouseButton1Click:Connect(function()
     if SelectedRemote then
         if setclipboard then
             setclipboard(CodeTextBox.Text)
-            warn("Code copied to clipboard!")
+            warn("Código copiado para a área de transferência!")
         else
-            warn("Seu executor não suporta a função de clipboard. Copie manualmente o código: " .. CodeTextBox.Text)
+            warn("Seu executor não suporta a função de clipboard. Copie manualmente o código.")
         end
     else
         warn("Nenhum remote selecionado para copiar o código.")
@@ -340,17 +392,42 @@ end)
 
 FireButton.MouseButton1Click:Connect(function()
     if SelectedRemote then
-        local remote = game:FindFirstChild(SelectedRemote.Path:gsub("game.", ""), true)
+        -- Tentar encontrar o remote de várias formas
+        local remote = nil
+        
+        -- Método 1: Procurar pelo caminho completo
+        local pathString = SelectedRemote.Path:gsub("game.", "")
+        remote = game:FindFirstChild(pathString, true)
+        
+        -- Método 2: Procurar pelo nome em todo o jogo
+        if not remote then
+            local allRemotes = game:GetDescendants()
+            for _, obj in ipairs(allRemotes) do
+                if obj.Name == SelectedRemote.Name and (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
+                    remote = obj
+                    break
+                end
+            end
+        end
+        
         if remote then
-            if SelectedRemote.Type == "RemoteEvent" then
-                remote:FireServer(unpack(SelectedRemote.Args))
-                warn("RemoteEvent disparado: " .. SelectedRemote.Name)
+            local success, result = pcall(function()
+                if SelectedRemote.Type == "RemoteEvent" then
+                    remote:FireServer(unpack(SelectedRemote.Args))
+                    return "RemoteEvent disparado: " .. SelectedRemote.Name
+                else
+                    local res = remote:InvokeServer(unpack(SelectedRemote.Args))
+                    return "RemoteFunction invocado: " .. SelectedRemote.Name .. ", Resultado: " .. tostring(res)
+                end
+            end)
+            
+            if success then
+                warn(result)
             else
-                local result = remote:InvokeServer(unpack(SelectedRemote.Args))
-                warn("RemoteFunction invocado: " .. SelectedRemote.Name .. ", Resultado: " .. tostring(result))
+                warn("Erro ao disparar remote: " .. tostring(result))
             end
         else
-            warn("Instância do remote não encontrada: " .. SelectedRemote.Path)
+            warn("Remote não encontrado: " .. SelectedRemote.Name)
         end
     else
         warn("Nenhum remote selecionado para disparar/invocar.")
@@ -361,14 +438,14 @@ BlacklistButton.MouseButton1Click:Connect(function()
     if SelectedRemote then
         local remoteName = SelectedRemote.Name
         BlacklistedRemotes[remoteName] = true
-        if SpiedRemotes[remoteName] then
+        if SpiedRemotes[remoteName] and SpiedRemotes[remoteName].Button then
             SpiedRemotes[remoteName].Button:Destroy()
             SpiedRemotes[remoteName] = nil
         end
         SelectedRemote = nil
         CodeTextBox.Text = ""
         RemotesFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y)
-        warn("Remote \'" .. remoteName .. "\' adicionado à blacklist.")
+        warn("Remote '" .. remoteName .. "' adicionado à blacklist.")
     else
         warn("Nenhum remote selecionado para adicionar à blacklist.")
     end
@@ -389,3 +466,6 @@ ClearBlacklistButton.MouseButton1Click:Connect(function()
     BlacklistedRemotes = {}
     warn("Blacklist limpa. Todos os remotes serão detectados novamente ao serem chamados.")
 end)
+
+-- Instruções adicionais
+warn("Para testar: Execute ações no jogo que usem RemoteEvents/RemoteFunctions.")
