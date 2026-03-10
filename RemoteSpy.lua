@@ -160,13 +160,25 @@ CodeTextBox.ClearTextOnFocus = false
 CodeTextBox.PlaceholderText = "Aguardando detecção de remotes..."
 CodeTextBox.Parent = CodeDisplayFrame
 
+-- Action Buttons (Layout corrigido)
 local ActionButtonsFrame = Instance.new("Frame")
-ActionButtonsFrame.Size = UDim2.new(1, 0, 0, 130)
-ActionButtonsFrame.Position = UDim2.new(0, 0, 1, -130)
-ActionButtonsFrame.BackgroundTransparency = 1
+ActionButtonsFrame.Size = UDim2.new(1, -10, 0, 120)
+ActionButtonsFrame.Position = UDim2.new(0, 5, 1, -125)
+ActionButtonsFrame.BackgroundColor3 = Color3.fromRGB(28, 28, 32)
+ActionButtonsFrame.BorderSizePixel = 0
 ActionButtonsFrame.Parent = CodeDisplayFrame
 
--- Action Buttons
+-- Layout dos botões em grid
+local ButtonGrid = Instance.new("UIGridLayout")
+ButtonGrid.FillDirection = Enum.FillDirection.Horizontal
+ButtonGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+ButtonGrid.VerticalAlignment = Enum.VerticalAlignment.Center
+ButtonGrid.CellSize = UDim2.new(0, 130, 0, 35)
+ButtonGrid.CellPadding = UDim2.new(0, 8, 0, 8)
+ButtonGrid.FillDirectionMaxCells = 3
+ButtonGrid.Parent = ActionButtonsFrame
+
+-- Criar botões com tamanhos uniformes
 local CopyButton = Instance.new("TextButton")
 local FireButton = Instance.new("TextButton")
 local BlacklistButton = Instance.new("TextButton")
@@ -177,40 +189,34 @@ local buttons = {CopyButton, FireButton, BlacklistButton, ClearButton, ClearBlac
 for _, btn in ipairs(buttons) do
     btn.TextColor3 = Color3.fromRGB(230, 230, 235)
     btn.Font = Enum.Font.SourceSansSemibold
-    btn.TextSize = 15
+    btn.TextSize = 14
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
     btn.Parent = ActionButtonsFrame
 end
 
-CopyButton.Text = "Copiar Código"
+CopyButton.Text = "Copiar"
 CopyButton.BackgroundColor3 = Color3.fromRGB(80, 100, 160)
-CopyButton.Size = UDim2.new(0.48, -5, 0.48, -5)
-CopyButton.Position = UDim2.new(0.01, 0, 0.01, 0)
 
-FireButton.Text = "Disparar/Invocar"
+FireButton.Text = "Disparar"
 FireButton.BackgroundColor3 = Color3.fromRGB(80, 140, 100)
-FireButton.Size = UDim2.new(0.48, -5, 0.48, -5)
-FireButton.Position = UDim2.new(0.51, 0, 0.01, 0)
 
 BlacklistButton.Text = "Blacklist"
 BlacklistButton.BackgroundColor3 = Color3.fromRGB(160, 60, 60)
-BlacklistButton.Size = UDim2.new(0.23, -5, 0.48, -5)
-BlacklistButton.Position = UDim2.new(0.01, 0, 0.51, 0)
 
-ClearButton.Text = "Limpar Saída"
+ClearButton.Text = "Limpar"
 ClearButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-ClearButton.Size = UDim2.new(0.23, -5, 0.48, -5)
-ClearButton.Position = UDim2.new(0.26, 0, 0.51, 0)
 
 ClearBlacklistButton.Text = "Limpar Blacklist"
 ClearBlacklistButton.BackgroundColor3 = Color3.fromRGB(60, 60, 120)
-ClearBlacklistButton.Size = UDim2.new(0.48, -5, 0.48, -5)
-ClearBlacklistButton.Position = UDim2.new(0.51, 0, 0.51, 0)
 
-setupButtonHover(CopyButton, CopyButton.BackgroundColor3, Color3.fromRGB(100, 120, 180))
-setupButtonHover(FireButton, FireButton.BackgroundColor3, Color3.fromRGB(100, 160, 120))
-setupButtonHover(BlacklistButton, BlacklistButton.BackgroundColor3, Color3.fromRGB(180, 80, 80))
-setupButtonHover(ClearButton, ClearButton.BackgroundColor3, Color3.fromRGB(120, 120, 120))
-setupButtonHover(ClearBlacklistButton, ClearBlacklistButton.BackgroundColor3, Color3.fromRGB(80, 80, 140))
+-- Hover Effects
+setupButtonHover(CopyButton, Color3.fromRGB(80, 100, 160), Color3.fromRGB(100, 120, 180))
+setupButtonHover(FireButton, Color3.fromRGB(80, 140, 100), Color3.fromRGB(100, 160, 120))
+setupButtonHover(BlacklistButton, Color3.fromRGB(160, 60, 60), Color3.fromRGB(180, 80, 80))
+setupButtonHover(ClearButton, Color3.fromRGB(100, 100, 100), Color3.fromRGB(120, 120, 120))
+setupButtonHover(ClearBlacklistButton, Color3.fromRGB(60, 60, 120), Color3.fromRGB(80, 80, 140))
 
 -- Core Logic
 local SpiedRemotes = {}
