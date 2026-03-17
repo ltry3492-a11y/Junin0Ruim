@@ -1,4 +1,4 @@
--- Roblox Script: Blob Puller with UI
+-- Roblox Script: Blob Puller with UI (v2 - 5 at a time)
 -- LocalScript (Colocar dentro de StarterGui ou usar via Executor)
 
 local Players = game:GetService("Players")
@@ -8,12 +8,11 @@ local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
 
 -- Configurações Iniciais
 local isEnabled = false
 local pullSpeed = 50 -- Velocidade padrão
-local blobFolder = workspace:FindFirstChild("Blobs")
+local maxSimultaneous = 5 -- Quantidade de parts puxadas por vez
 
 -- Criar UI
 local ScreenGui = Instance.new("ScreenGui")
@@ -37,7 +36,7 @@ UICorner.Parent = MainFrame
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 30)
-Title.Text = "Blob Puller"
+Title.Text = "Blob Puller (5x5)"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.BackgroundTransparency = 1
 Title.Font = Enum.Font.GothamBold
@@ -131,20 +130,20 @@ DeleteBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Lógica de Puxar
-RunService.Heartbeat:Connect(function(dt)
+RunService.Heartbeat:Connect(function()
     if not isEnabled then return end
     
-    blobFolder = workspace:FindFirstChild("Blobs")
+    local blobFolder = workspace:FindFirstChild("Blobs")
     if not blobFolder then return end
     
-    local character = player.Character
-    if not character then return end
-    local root = character:FindFirstChild("HumanoidRootPart")
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
     local blobs = blobFolder:GetChildren()
     
-    -- Filtrar apenas parts com nomes numéricos e ordenar decrescente
+    -- Filtrar apenas parts com nomes numéricos
     local sortedBlobs = {}
     for _, b in ipairs(blobs) do
         if b:IsA("BasePart") and tonumber(b.Name) then
@@ -152,19 +151,24 @@ RunService.Heartbeat:Connect(function(dt)
         end
     end
     
+    -- Ordenar decrescente (priorizar números maiores)
     table.sort(sortedBlobs, function(a, b)
         return tonumber(a.Name) > tonumber(b.Name)
     end)
 
-    -- Puxar as parts
+    -- Puxar apenas as primeiras 5 parts da lista ordenada
+    local count = 0
     for _, blob in ipairs(sortedBlobs) do
+        if count >= maxSimultaneous then break end
+        
         local direction = (root.Position - blob.Position).Unit
         local distance = (root.Position - blob.Position).Magnitude
         
-        if distance > 2 then
+        if distance > 3 then
             blob.CanCollide = false
             blob.Anchored = false
             blob.Velocity = direction * pullSpeed
+            count = count + 1
         end
     end
 end)
